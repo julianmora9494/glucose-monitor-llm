@@ -1,0 +1,57 @@
+version: "3.9"
+
+# Glucose Intelligence Platform — todos los servicios
+
+services:
+
+  # ─── Servicio de monitoreo CGM ──────────────────────────────────────────────
+  monitor:
+    build:
+      context: .
+      dockerfile: monitor/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./charts:/app/charts
+    depends_on: []
+    networks:
+      - glucose_net
+
+  # ─── FastAPI Backend ────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./clinical_history/processed:/app/clinical_history/processed:ro
+    networks:
+      - glucose_net
+
+  # ─── Streamlit Dashboard ────────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      - api
+    networks:
+      - glucose_net
+
+networks:
+  glucose_net:
+    driver: bridge
+
+volumes:
+  glucose_data:
