@@ -26,6 +26,26 @@ clinical_history/
 
 ---
 
+## Dónde poner PDFs, imágenes y exámenes
+
+```
+clinical_history/uploads/
+├── examenes/           ← PDFs e imágenes de exámenes de laboratorio
+│   ├── hemograma_2026-03.pdf
+│   ├── lipidos_2026-03.jpg
+│   └── ...
+├── formulas/           ← Fórmulas médicas (insulina, metformina, etc.)
+│   └── formula_diabetes_2026-03-13.pdf
+└── notas_medicas/      ← Notas de consulta, órdenes, remisiones
+    └── ginecologia_2026-03-18.pdf
+```
+
+Después de poner los archivos, el LLM los puede procesar con Azure OpenAI (GPT-4o Vision para imágenes y PDFs).
+
+> Todos los archivos en `uploads/` están en `.gitignore` — nunca van a GitHub.
+
+---
+
 ## Cómo exportar tu historial de ChatGPT
 
 1. Ve a **ChatGPT** → tu avatar (esquina superior derecha) → **Settings**
