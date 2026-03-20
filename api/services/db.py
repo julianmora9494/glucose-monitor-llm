@@ -36,8 +36,7 @@ def initialize_schema() -> None:
             dt_min          DOUBLE,
             slope_mgdl_min  DOUBLE,
             percent_change  DOUBLE,
-            range_type      VARCHAR,
-            created_at      TIMESTAMPTZ DEFAULT now()
+            range_type      VARCHAR
         )
     """)
     con.execute("""
@@ -111,7 +110,7 @@ def get_readings_by_date(target_date: date) -> pd.DataFrame:
             SELECT timestamp, glucose_mgdl, trend, delta_mgdl,
                    dt_min, slope_mgdl_min, percent_change, range_type
             FROM readings
-            WHERE DATE(timestamp AT TIME ZONE 'America/Bogota') = ?
+            WHERE CAST(timestamp AS DATE) = ?
             ORDER BY timestamp ASC
         """, [target_date]).df()
         return df
@@ -123,13 +122,14 @@ def get_readings_last_hours(hours: int = 3) -> pd.DataFrame:
     """Retorna las lecturas de las últimas N horas."""
     con = get_connection()
     try:
+        interval = f"{hours} hours"
         df = con.execute("""
             SELECT timestamp, glucose_mgdl, trend, delta_mgdl,
                    slope_mgdl_min, range_type
             FROM readings
-            WHERE timestamp >= now() - INTERVAL (? || ' hours')
+            WHERE timestamp >= now() - INTERVAL ?
             ORDER BY timestamp ASC
-        """, [hours]).df()
+        """, [interval]).df()
         return df
     finally:
         con.close()
