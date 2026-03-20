@@ -1,0 +1,6 @@
+pylibrelinkup
+python-dotenv
+requests
+matplotlib
+pandas
+pip-tools
