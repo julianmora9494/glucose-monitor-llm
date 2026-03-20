@@ -1,91 +1,160 @@
 # Glucose Intelligence Platform
 
-> Sistema inteligente de monitoreo glucémico continuo con IA médica, alertas en tiempo real y dashboard clínico.
+> Sistema de monitoreo glucémico continuo con IA médica, alertas en tiempo real y dashboard clínico. Conectado a Abbott FreeStyle Libre via LibreLinkUp.
 
-**Paciente**: María Verónica López Falla — FreeStyle Libre via LibreLinkUp
-**Stack**: Python · FastAPI · Streamlit · Azure OpenAI · DuckDB · Telegram
+**Stack:** Python · FastAPI · Streamlit · Azure OpenAI GPT-4o · DuckDB · Telegram
+**Repo:** `julianmora9494/glucose-monitor-llm` (privado)
 
 ---
 
 ## Arquitectura
 
 ```
-LibreLinkUp API
+LibreLinkUp API (FreeStyle Libre CGM)
       │
       ▼
-┌─────────────┐      ┌──────────────────┐      ┌─────────────────┐
-│   Monitor   │─────▶│   FastAPI + DB   │─────▶│  Streamlit UI   │
-│  Service    │      │   (DuckDB)       │      │  (Dashboard)    │
-└─────────────┘      └────────┬─────────┘      └─────────────────┘
-                              │
-                    ┌─────────┴──────────┐
-                    │                    │
-              ┌─────▼──────┐    ┌────────▼───────┐
-              │  Telegram  │    │  Azure OpenAI  │
-              │    Bot     │    │  (LLM médico)  │
-              └────────────┘    └────────────────┘
+monitor/monitor_glucose.py   ← Polling cada 2 min, alertas Telegram, escribe en DuckDB
+      │
+      ▼
+data/glucose.duckdb          ← Base de datos central (local, gitignoreado)
+      │
+      ├──► api/main.py        ← FastAPI: lecturas, métricas AGP, resúmenes, charts
+      │
+      └──► dashboard/app.py   ← Streamlit: 4 páginas de monitoreo clínico
+                                   (llm/interpreter.py en Fase 4)
 ```
-
-## Módulos
-
-| Módulo | Descripción | Estado |
-|--------|-------------|--------|
-| `monitor/` | Servicio de polling CGM + alertas Telegram | ✅ Producción |
-| `api/` | FastAPI backend con métricas AGP | 🚧 En desarrollo |
-| `dashboard/` | Streamlit: tiempo real + análisis clínico | 🚧 En desarrollo |
-| `llm/` | Interpretaciones con Azure OpenAI | 🚧 En desarrollo |
-| `clinical_history/` | Historial clínico de la paciente | 📋 Ver instrucciones |
 
 ---
 
-## Instalación rápida
+## Estado actual por fase
+
+| Fase | Módulo | Estado |
+|------|--------|--------|
+| 0 | Monitor CGM + alertas Telegram | ✅ Producción (`main`) |
+| 1 | DuckDB + métricas AGP + chart diario | ✅ Completo |
+| 2 | FastAPI — endpoints de lecturas y resúmenes | ✅ Completo |
+| 3 | Streamlit dashboard — 4 páginas clínicas | ✅ Completo |
+| 4 | Azure OpenAI — interpretación médica con IA | ⏳ Siguiente |
+| 5 | Telegram bot bidireccional + resúmenes diarios | ⏳ Pendiente |
+| 6 | Informe médico PDF exportable | ⏳ Pendiente |
+| 7 | Predicción glucémica 15–30 min | ⏳ Pendiente |
+
+---
+
+## Instalación
 
 ```bash
-# 1. Clonar el repo
+# 1. Clonar
 git clone https://github.com/julianmora9494/glucose-monitor-llm.git
 cd glucose-monitor-llm
+git checkout feature/llm-platform
 
-# 2. Crear entorno virtual
+# 2. Entorno virtual
 python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-.venv\Scripts\activate     # Windows
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # Linux/Mac
 
-# 3. Configurar variables de entorno
+# 3. Dependencias
+pip install -r requirements.txt
+
+# 4. Variables de entorno
 cp .env.example .env
-# Editar .env con tus credenciales
+# Editar .env con credenciales reales
+```
 
-# 4. Instalar dependencias del monitor
-pip install -r monitor/requirements.txt
+---
 
-# 5. Ejecutar monitor
+## Inicio rápido
+
+### Importar historial del sensor (una sola vez)
+```bash
+# Trae hasta ~15 días del FreeStyle Libre a DuckDB
+python scripts/import_history.py
+```
+
+### Levantar el sistema completo (3 terminales)
+
+**Terminal 1 — FastAPI backend:**
+```bash
+uvicorn api.main:app --port 8080 --reload
+```
+
+**Terminal 2 — Streamlit dashboard:**
+```bash
+streamlit run dashboard/app.py
+```
+
+**Terminal 3 — Monitor CGM (polling continuo):**
+```bash
 python monitor/monitor_glucose.py
 ```
 
----
-
-## Branches
-
-| Branch | Propósito |
-|--------|-----------|
-| `main` | Código estable en producción |
-| `feature/llm-platform` | Nueva plataforma con LLM, FastAPI, Streamlit |
+El dashboard estará en: `http://localhost:8501`
+La API estará en: `http://localhost:8080/docs`
 
 ---
 
-## Historial clínico
+## Dashboard — páginas
 
-Ver instrucciones en [clinical_history/README.md](clinical_history/README.md) para cargar el historial de ChatGPT y exámenes de laboratorio.
+| Página | Ruta | Descripción |
+|--------|------|-------------|
+| Inicio | `/` | Glucosa actual + resumen del día + últimas 3h |
+| Tiempo Real | `/tiempo_real` | Auto-refresh 2 min + alertas contextuales |
+| Análisis Diario | `/analisis_diario` | Chart AGP interactivo + métricas clínicas |
+| Tendencias | `/tendencias` | TIR/TAR/TBR histórico + CV% + tabla comparativa |
+| Informe Médico | `/informe_medico` | Resumen de período + puntos para la consulta |
 
 ---
 
-## Métricas clínicas que calcula el sistema
+## API — endpoints principales
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/health` | Estado del servicio |
+| GET | `/api/readings/latest` | Última lectura con contexto clínico |
+| GET | `/api/readings/day/{date}` | Lecturas de un día |
+| GET | `/api/readings/last-hours/{n}` | Últimas N horas |
+| GET | `/api/summaries/day/{date}` | Métricas AGP del día |
+| GET | `/api/summaries/weekly` | Resumen de los últimos 7 días |
+| GET | `/api/summaries/chart/{date}` | PNG del perfil glucémico |
+| GET | `/api/summaries/available-dates` | Fechas con datos disponibles |
+
+Documentación interactiva: `http://localhost:8080/docs`
+
+---
+
+## Métricas clínicas implementadas
 
 | Métrica | Descripción | Objetivo |
 |---------|-------------|---------|
 | **TIR** | Time In Range (70–180 mg/dL) | >70% |
 | **TAR** | Time Above Range (>180 mg/dL) | <25% |
 | **TBR** | Time Below Range (<70 mg/dL) | <4% |
-| **CV%** | Coeficiente de variación glucémica | <36% |
-| **eA1C** | HbA1c estimada por CGM | Según objetivo del médico |
-| **GMI** | Glucose Management Indicator | Según objetivo del médico |
-| **MAGE** | Mean Amplitude of Glycemic Excursions | <140 mg/dL |
+| **TBR severo** | Tiempo <54 mg/dL | <1% |
+| **CV%** | Variabilidad glucémica | <36% |
+| **GMI** | Glucose Management Indicator (estima HbA1c) | <7% |
+| **MAGE** | Amplitud media de excursiones glucémicas | <140 mg/dL |
+
+Ver explicaciones en lenguaje simple: [GLOSARIO.md](GLOSARIO.md)
+
+---
+
+## Variables de entorno
+
+Copiar `.env.example` → `.env` y completar:
+
+| Variable | Descripción |
+|----------|-------------|
+| `LIBRE_EMAIL` / `LIBRE_PASSWORD` | Credenciales LibreLinkUp |
+| `LIBRE_REGION` | Región API (`LA`, `EU`, `US`, `AP`) |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Alertas Telegram |
+| `AZURE_OPENAI_API_KEY` / `ENDPOINT` / `DEPLOYMENT` | LLM (Fase 4) |
+| `DATABASE_URL` | Ruta DuckDB (default: `data/glucose.duckdb`) |
+| `API_PORT` | Puerto FastAPI (default: `8080`) |
+
+---
+
+## Datos de la paciente
+
+Todo el historial clínico está en `clinical_history/` y es **gitignoreado** por privacidad (PHI).
+Ver instrucciones en [CLAUDE.md](CLAUDE.md) para agregar exámenes o fórmulas médicas localmente.
