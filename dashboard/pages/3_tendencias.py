@@ -76,37 +76,54 @@ df_days = pd.DataFrame(days)
 # Barras apiladas: TBR + TIR + TAR
 fig_stack = go.Figure()
 
+def _bar_text(series: pd.Series) -> list[str]:
+    """Muestra el valor solo si es >= 3%, evita texto en barras muy pequeñas."""
+    return [f"{v:.0f}%" if v >= 3 else "" for v in series]
+
 fig_stack.add_bar(
-    name="Hipo (<70) 🟡",
+    name="Hipo <70 mg/dL",
     x=df_days["date"], y=df_days["tbr_percent"],
-    marker_color="#F39C12", text=df_days["tbr_percent"].apply(lambda x: f"{x:.0f}%"),
+    marker_color="#F39C12",
+    text=_bar_text(df_days["tbr_percent"]),
     textposition="inside",
+    insidetextfont=dict(color="white", size=13),
 )
 fig_stack.add_bar(
-    name="En rango (70-180) 🟢",
+    name="En rango 70-180",
     x=df_days["date"], y=df_days["tir_percent"],
-    marker_color="#2ECC71", text=df_days["tir_percent"].apply(lambda x: f"{x:.0f}%"),
+    marker_color="#2ECC71",
+    text=_bar_text(df_days["tir_percent"]),
     textposition="inside",
+    insidetextfont=dict(color="white", size=13),
 )
 fig_stack.add_bar(
-    name="Hiper (>180) 🔴",
+    name="Hiper >180 mg/dL",
     x=df_days["date"], y=df_days["tar_percent"],
-    marker_color="#E74C3C", text=df_days["tar_percent"].apply(lambda x: f"{x:.0f}%"),
+    marker_color="#E74C3C",
+    text=_bar_text(df_days["tar_percent"]),
     textposition="inside",
+    insidetextfont=dict(color="white", size=13),
 )
 
 fig_stack.add_hline(y=70, line_dash="dash", line_color="#27AE60",
-                    annotation_text="objetivo TIR 70%")
+                    annotation_text="objetivo TIR 70%",
+                    annotation_font_color="#27AE60")
 
 fig_stack.update_layout(
     barmode="stack",
-    height=380,
-    yaxis=dict(title="% del día", range=[0, 100]),
+    height=400,
+    yaxis=dict(title="% del día", range=[0, 100], gridcolor="rgba(128,128,128,0.2)"),
     xaxis=dict(title="Fecha"),
-    plot_bgcolor="white",
-    paper_bgcolor="white",
-    legend=dict(orientation="h", yanchor="bottom", y=1.01),
-    margin=dict(l=40, r=20, t=50, b=40),
+    plot_bgcolor="rgba(0,0,0,0)",
+    paper_bgcolor="rgba(0,0,0,0)",
+    font=dict(color="inherit"),
+    legend=dict(
+        orientation="h",
+        yanchor="bottom", y=1.02,
+        xanchor="center", x=0.5,
+        bgcolor="rgba(0,0,0,0)",
+    ),
+    margin=dict(l=40, r=20, t=60, b=40),
 )
 st.plotly_chart(fig_stack, use_container_width=True)
 
@@ -128,7 +145,8 @@ with col_avg:
     fig_avg.add_hline(y=154, line_dash="dash", line_color="#27AE60",
                       annotation_text="~GMI 7%")
     fig_avg.update_layout(
-        plot_bgcolor="white", paper_bgcolor="white",
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="inherit"),
         margin=dict(l=40, r=20, t=20, b=40),
         showlegend=False,
     )
@@ -147,8 +165,10 @@ with col_cv:
     fig_cv.add_hline(y=36, line_dash="dash", line_color="#27AE60",
                      annotation_text="objetivo <36%")
     fig_cv.update_layout(
-        height=300, plot_bgcolor="white", paper_bgcolor="white",
-        yaxis=dict(title="CV%"),
+        height=300,
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="inherit"),
+        yaxis=dict(title="CV%", gridcolor="rgba(128,128,128,0.2)"),
         margin=dict(l=40, r=20, t=20, b=40),
     )
     st.plotly_chart(fig_cv, use_container_width=True)
