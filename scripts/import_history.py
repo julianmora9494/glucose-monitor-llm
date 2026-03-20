@@ -1,71 +1,103 @@
 """
-Importación histórica desde LibreLinkUp (logbook — ~14 días).
+Importacion historica de glucosa -> DuckDB.
 
-Uso:
-    python scripts/import_history.py            # Importa del sensor + calcula summaries
-    python scripts/import_history.py --offline  # Solo recalcula summaries desde DuckDB
+MODOS DE USO
+============
 
-El modo --offline es útil cuando no hay conexión a internet o cuando el sensor
-no está disponible pero ya existen lecturas en la base de datos.
+1. Desde LibreLinkUp (requiere internet):
+   python scripts/import_history.py
+
+   Combina graph() (~12h continuo) + logbook() (~14 dias escaneos manuales).
+   LIMITACION: la API de LibreLinkUp no expone el historial continuo completo.
+   Para el historial completo usar el modo CSV (ver punto 3).
+
+2. Solo recalcular resumenes desde lecturas ya en DuckDB (sin internet):
+   python scripts/import_history.py --offline
+
+3. Desde CSV exportado de LibreView (historial completo hasta 90 dias):
+   python scripts/import_history.py --csv ruta/al/archivo.csv
+
+   Como exportar el CSV:
+   a) Entrar a https://www.libreview.com con las mismas credenciales
+   b) Menu -> Mis datos -> Exportar datos (o "Download my data")
+   c) Seleccionar rango maximo disponible
+   d) Guardar el archivo .csv y pasarle la ruta a este script
+
+   El CSV de LibreView tiene columnas como:
+   'Sello de tiempo del dispositivo', 'Historial de glucosa mg/dL',
+   'Escanear glucosa mg/dL', etc.
 """
 
+import csv
 import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
-# Permitir ejecución desde la raíz del proyecto o desde scripts/
+# Permitir ejecucion desde la raiz del proyecto o desde scripts/
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
-from pylibrelinkup import PyLibreLinkUp
-from pylibrelinkup.api_url import APIUrl
 
 load_dotenv()
 
-from api.services.db import initialize_schema, insert_reading, get_readings_by_date
+from api.services.db import (
+    get_readings_by_date,
+    initialize_schema,
+    insert_reading,
+    upsert_daily_summary,
+)
 from api.services.metrics import calculate_daily_metrics
-from api.services.db import upsert_daily_summary
 
-# ─── Configuración ───────────────────────────────────────────────────────────
+# ─── Configuracion LibreLinkUp ────────────────────────────────────────────────
 LIBRE_EMAIL    = os.getenv("LIBRE_EMAIL")
 LIBRE_PASSWORD = os.getenv("LIBRE_PASSWORD")
 LIBRE_REGION   = os.getenv("LIBRE_REGION", "LA").upper()
 
-REGION_MAP = {
-    "LA": APIUrl.LA,
-    "EU": APIUrl.EU,
-    "US": APIUrl.US,
-    "AP": APIUrl.AP,
-}
+REGION_MAP: dict = {}
+try:
+    from pylibrelinkup import PyLibreLinkUp
+    from pylibrelinkup.api_url import APIUrl
+    REGION_MAP = {"LA": APIUrl.LA, "EU": APIUrl.EU, "US": APIUrl.US, "AP": APIUrl.AP}
+except ImportError:
+    pass
 
-if not LIBRE_EMAIL or not LIBRE_PASSWORD:
-    print("[ERROR] Falta LIBRE_EMAIL o LIBRE_PASSWORD en el .env")
-    sys.exit(1)
 
-if LIBRE_REGION not in REGION_MAP:
-    print(f"[ERROR] LIBRE_REGION debe ser una de: {list(REGION_MAP)}")
-    sys.exit(1)
-
+# ─── Helpers ─────────────────────────────────────────────────────────────────
 
 def _range_type(glucose: float) -> str:
-    """Clasifica la lectura en el rango glucémico."""
-    if glucose < 54:
-        return "very_low"
-    if glucose < 70:
-        return "low"
-    if glucose <= 180:
-        return "normal"
-    if glucose <= 250:
-        return "high"
+    """Clasifica una lectura en su rango glucemico."""
+    if glucose < 54:  return "very_low"
+    if glucose < 70:  return "low"
+    if glucose <= 180: return "normal"
+    if glucose <= 250: return "high"
     return "very_high"
+
+
+def _insert(ts: datetime, glucose: float, trend: Optional[str] = None) -> bool:
+    """Inserta una lectura con deduplicacion. Retorna True si fue nueva."""
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return insert_reading(
+        timestamp=ts,
+        glucose_mgdl=glucose,
+        trend=trend,
+        delta_mgdl=None,
+        dt_min=None,
+        slope_mgdl_min=None,
+        percent_change=None,
+        range_type=_range_type(glucose),
+    )
 
 
 def _recalculate_summaries(dates: set) -> None:
     """Calcula y persiste el resumen AGP para cada fecha del set."""
     if not dates:
+        print("Sin fechas nuevas para calcular.")
         return
     print("Calculando resumenes diarios...")
+    ok_days = 0
     for d in sorted(dates):
         df = get_readings_by_date(d)
         if len(df) >= 3:
@@ -74,13 +106,15 @@ def _recalculate_summaries(dates: set) -> None:
             upsert_daily_summary(summary)
             tir = summary.get("tir_percent", 0)
             n   = summary.get("reading_count", 0)
-            print(f"  {d}: {n} lecturas | TIR {tir:.1f}%")
+            print(f"  {d}: {n:3d} lecturas | TIR {tir:.1f}%")
+            ok_days += 1
         else:
-            print(f"  {d}: {len(df)} lecturas (insuficientes para resumen)")
+            print(f"  {d}: {len(df):3d} lecturas (menos de 3, sin resumen)")
+    print(f"Resumenes calculados: {ok_days} dias con datos suficientes")
 
 
 def _recalculate_all_from_db() -> None:
-    """Modo offline: recalcula summaries desde las lecturas ya en DuckDB."""
+    """Modo --offline: recalcula summaries desde lecturas ya en DuckDB."""
     import duckdb
     DATABASE_URL = os.getenv("DATABASE_URL", "data/glucose.duckdb")
     con = duckdb.connect(DATABASE_URL)
@@ -88,25 +122,22 @@ def _recalculate_all_from_db() -> None:
         "SELECT DISTINCT CAST(timestamp AS DATE) as d FROM readings ORDER BY d"
     ).fetchall()
     con.close()
-
     dates = {row[0] for row in rows}
-    print(f"Dias encontrados en DuckDB: {len(dates)}")
+    print(f"Dias con lecturas en DuckDB: {len(dates)}")
     _recalculate_summaries(dates)
 
 
-def main() -> None:
-    offline = "--offline" in sys.argv
+# ─── Modo 1: LibreLinkUp (graph + logbook) ───────────────────────────────────
 
-    print("=== Importacion historica LibreLinkUp -> DuckDB ===\n")
-    initialize_schema()
+def _import_from_librelink() -> None:
+    """Descarga datos de los dos endpoints disponibles y los combina."""
+    if not LIBRE_EMAIL or not LIBRE_PASSWORD:
+        print("[ERROR] Falta LIBRE_EMAIL o LIBRE_PASSWORD en el .env")
+        sys.exit(1)
+    if LIBRE_REGION not in REGION_MAP:
+        print("[ERROR] LIBRE_REGION debe ser LA, EU, US o AP")
+        sys.exit(1)
 
-    if offline:
-        print("Modo offline: recalculando summaries desde lecturas existentes...\n")
-        _recalculate_all_from_db()
-        print("\nSummaries recalculados OK")
-        return
-
-    # ─── Modo online: descargar del sensor ───────────────────────────────────
     print("Autenticando con LibreLinkUp...")
     try:
         client = PyLibreLinkUp(
@@ -116,66 +147,214 @@ def main() -> None:
         )
         client.authenticate()
     except Exception as e:
-        print(f"\n[ERROR de red] No se pudo conectar a LibreLinkUp: {e}")
-        print()
-        print("Opciones:")
-        print("  1. Verificar conexion a internet y volver a intentar.")
-        print("  2. Si ya tienes lecturas en DuckDB, usar modo offline:")
-        print("     python scripts/import_history.py --offline")
+        print(f"\n[ERROR de red] No se pudo conectar: {e}")
+        print("\nOpciones:")
+        print("  Sin internet  -> python scripts/import_history.py --offline")
+        print("  CSV completo  -> python scripts/import_history.py --csv archivo.csv")
         sys.exit(1)
 
     patients = client.get_patients()
     if not patients:
-        print("[ERROR] No se encontraron pacientes vinculados.")
+        print("[ERROR] No hay pacientes vinculados.")
         sys.exit(1)
 
     patient = patients[0]
-    nombre = f"{getattr(patient, 'first_name', '')} {getattr(patient, 'last_name', '')}".strip()
+    nombre = f"{getattr(patient,'first_name','')} {getattr(patient,'last_name','')}".strip()
     print(f"Paciente: {nombre}\n")
 
-    print("Descargando logbook (hasta ~14 dias)...")
-    measurements = client.logbook(patient)
-    print(f"  {len(measurements)} lecturas descargadas del sensor\n")
+    # Combinar graph() (~12h continuo) + logbook() (~14 dias de escaneos)
+    all_measurements = []
+
+    print("Descargando graph() — ultimas ~12 horas continuas...")
+    try:
+        graph_data = client.graph(patient)
+        print(f"  {len(graph_data)} lecturas obtenidas")
+        all_measurements.extend(graph_data)
+    except Exception as e:
+        print(f"  [WARN] graph() fallo: {e}")
+
+    print("Descargando logbook() — historial de escaneos (~14 dias)...")
+    try:
+        logbook_data = client.logbook(patient)
+        print(f"  {len(logbook_data)} lecturas obtenidas")
+        all_measurements.extend(logbook_data)
+    except Exception as e:
+        print(f"  [WARN] logbook() fallo: {e}")
+
+    print(f"\nTotal a procesar: {len(all_measurements)} lecturas (con posibles duplicados)\n")
 
     inserted = 0
     skipped  = 0
     dates_seen: set = set()
 
-    for m in measurements:
+    for m in all_measurements:
         ts      = m.timestamp
         glucose = m.value_in_mg_per_dl
-
         if ts is None or glucose is None:
             skipped += 1
             continue
+        trend = str(getattr(m, "trend", "") or "") or None
+        if _insert(ts, float(glucose), trend):
+            inserted += 1
+            dates_seen.add(ts.date() if hasattr(ts, 'date') else ts)
+        else:
+            skipped += 1
 
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
+    print(f"Lecturas nuevas   : {inserted}")
+    print(f"Ya existian (skip): {skipped}")
+    print(f"Dias afectados    : {len(dates_seen)}\n")
 
-        trend = str(getattr(m, "trend", "") or "")
+    print("NOTA: La API de LibreLinkUp solo expone ~12h continuas (graph)")
+    print("y los escaneos manuales del sensor (logbook). Para el historial")
+    print("completo de 14 dias exportar CSV desde https://www.libreview.com\n")
 
-        ok = insert_reading(
-            timestamp=ts,
-            glucose_mgdl=float(glucose),
-            trend=trend or None,
-            delta_mgdl=None,
-            dt_min=None,
-            slope_mgdl_min=None,
-            percent_change=None,
-            range_type=_range_type(float(glucose)),
-        )
+    _recalculate_summaries(dates_seen)
 
-        if ok:
+
+# ─── Modo 2: CSV de LibreView ─────────────────────────────────────────────────
+
+# Posibles nombres de columna en el CSV de LibreView segun idioma/version
+_TS_COLS = [
+    "Sello de tiempo del dispositivo",
+    "Device Timestamp",
+    "Gerätezeitstempel",
+]
+_HIST_COLS = [
+    "Historial de glucosa mg/dL",
+    "Historic Glucose mg/dL",
+    "Historische Glukose mg/dL",
+]
+_SCAN_COLS = [
+    "Escanear glucosa mg/dL",
+    "Scan Glucose mg/dL",
+    "Gescannte Glukose mg/dL",
+]
+
+def _find_col(header: list[str], candidates: list[str]) -> Optional[str]:
+    for c in candidates:
+        if c in header:
+            return c
+    return None
+
+def _parse_libre_ts(raw: str) -> Optional[datetime]:
+    """Intenta parsear el timestamp del CSV de LibreView (varios formatos)."""
+    for fmt in ("%m/%d/%Y %I:%M %p", "%d-%m-%Y %H:%M", "%Y-%m-%d %H:%M", "%d/%m/%Y %H:%M"):
+        try:
+            return datetime.strptime(raw.strip(), fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+def _import_from_csv(csv_path: str) -> None:
+    """Importa lecturas desde el CSV exportado de LibreView."""
+    path = Path(csv_path)
+    if not path.exists():
+        print(f"[ERROR] Archivo no encontrado: {csv_path}")
+        sys.exit(1)
+
+    print(f"Leyendo CSV: {path.name}")
+
+    inserted = 0
+    skipped  = 0
+    errors   = 0
+    dates_seen: set = set()
+
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        # Saltar filas de cabecera del CSV de LibreView (primeras ~2 lineas de metadata)
+        lines = f.readlines()
+
+    # Encontrar la fila real de encabezados (la que tiene columnas de timestamp)
+    header_row = 0
+    for i, line in enumerate(lines):
+        if any(c in line for c in _TS_COLS + ["Device Timestamp", "Sello"]):
+            header_row = i
+            break
+
+    data_lines = lines[header_row:]
+    reader = csv.DictReader(data_lines)
+    header = reader.fieldnames or []
+
+    ts_col   = _find_col(header, _TS_COLS)
+    hist_col = _find_col(header, _HIST_COLS)
+    scan_col = _find_col(header, _SCAN_COLS)
+
+    if not ts_col:
+        print("[ERROR] No se encontro columna de timestamp en el CSV.")
+        print("Columnas disponibles: " + str(header))
+        sys.exit(1)
+
+    print(f"Columna timestamp : {ts_col}")
+    print(f"Columna historico : {hist_col}")
+    print(f"Columna escaneo   : {scan_col}")
+    print()
+
+    for row in reader:
+        raw_ts = row.get(ts_col, "").strip()
+        if not raw_ts:
+            continue
+
+        ts = _parse_libre_ts(raw_ts)
+        if ts is None:
+            errors += 1
+            continue
+
+        # Preferir historial continuo; si no, usar escaneo manual
+        glucose_raw = ""
+        if hist_col:
+            glucose_raw = row.get(hist_col, "").strip()
+        if not glucose_raw and scan_col:
+            glucose_raw = row.get(scan_col, "").strip()
+        if not glucose_raw:
+            skipped += 1
+            continue
+
+        try:
+            glucose = float(glucose_raw.replace(",", "."))
+        except ValueError:
+            errors += 1
+            continue
+
+        if _insert(ts, glucose):
             inserted += 1
             dates_seen.add(ts.date())
         else:
             skipped += 1
 
-    print(f"Lecturas insertadas : {inserted}")
+    print(f"Lecturas nuevas     : {inserted}")
     print(f"Ya existian (skip)  : {skipped}")
-    print(f"Dias nuevos         : {len(dates_seen)}\n")
+    print(f"Errores de formato  : {errors}")
+    print(f"Dias afectados      : {len(dates_seen)}\n")
 
     _recalculate_summaries(dates_seen)
+
+
+# ─── Main ─────────────────────────────────────────────────────────────────────
+
+def main() -> None:
+    args = sys.argv[1:]
+
+    print("=== Importacion historica -> DuckDB ===\n")
+    initialize_schema()
+
+    if "--offline" in args:
+        print("Modo offline: recalculando summaries desde DuckDB...\n")
+        _recalculate_all_from_db()
+        print("\nListo.")
+        return
+
+    if "--csv" in args:
+        idx = args.index("--csv")
+        if idx + 1 >= len(args):
+            print("[ERROR] Falta la ruta al CSV despues de --csv")
+            print("Uso: python scripts/import_history.py --csv ruta/al/archivo.csv")
+            sys.exit(1)
+        csv_path = args[idx + 1]
+        _import_from_csv(csv_path)
+        print("\nImportacion CSV completada!")
+        return
+
+    # Modo por defecto: LibreLinkUp online
+    _import_from_librelink()
     print("\nImportacion completada!")
 
 
