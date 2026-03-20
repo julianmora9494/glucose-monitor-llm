@@ -1,55 +1,93 @@
 """
-Página: Tiempo Real.
-Muestra la glucosa actual con auto-refresh cada 2 minutos.
+Página 1 — Tiempo Real.
+Glucosa actual con auto-refresh cada 2 minutos.
 """
 
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
-st.set_page_config(page_title="Tiempo Real | Glucose Intelligence", layout="wide")
+import dashboard.api_client as api
+from dashboard.components import (
+    api_status_banner,
+    glucose_gauge,
+    mini_chart,
+)
 
-# Auto-refresh cada 2 minutos (igual que el POLL_SECONDS del monitor)
+st.set_page_config(
+    page_title="Tiempo Real | Glucose Intelligence",
+    page_icon="⏱",
+    layout="wide",
+)
+
+# Auto-refresh cada 2 minutos (igual que POLL_SECONDS del monitor)
 st_autorefresh(interval=120_000, key="realtime_refresh")
 
-st.title("🩸 Monitoreo en Tiempo Real")
+with st.sidebar:
+    st.title("🩸 Glucose Intelligence")
+    online = api.is_api_online()
+    api_status_banner(online)
 
-# ─── Estado actual ─────────────────────────────────────────────────────────────
-col_gauge, col_info = st.columns([1, 2])
+st.title("⏱ Tiempo Real")
 
-with col_gauge:
-    st.subheader("Glucosa Actual")
-    # TODO: obtener de GET /api/readings/latest
-    st.metric(
-        label="mg/dL",
-        value="— ",
-        delta="Tendencia: —",
+if not online:
+    st.error("API no disponible. Inicia el backend primero.")
+    st.stop()
+
+# ─── Lectura actual ───────────────────────────────────────────────────────────
+latest = api.get_latest_reading()
+
+if not latest:
+    st.warning("Sin lecturas disponibles. El monitor puede no estar corriendo.")
+    st.info("Arranca el monitor: `python monitor/monitor_glucose.py`")
+    st.stop()
+
+glucose_gauge(latest)
+
+st.divider()
+
+# ─── Alertas activas ──────────────────────────────────────────────────────────
+alert_level = latest.get("alert_level", "ok")
+glucose = latest.get("glucose_mgdl", 0)
+minutes_ago = latest.get("minutes_ago", 0)
+
+if minutes_ago > 15:
+    st.warning(
+        f"⚠️ La última lectura tiene **{minutes_ago:.0f} minutos** de antigüedad. "
+        "El sensor puede estar desconectado.",
+        icon="📡",
     )
-    st.caption("Actualiza cada 2 minutos")
-
-with col_info:
-    st.subheader("Estado clínico")
-    col_a, col_b, col_c = st.columns(3)
-    with col_a:
-        st.metric("Hace (min)", "—")
-    with col_b:
-        st.metric("Cambio", "— mg/dL")
-    with col_c:
-        st.metric("Velocidad", "— mg/dL·min")
+elif alert_level == "critical":
+    if glucose < 70:
+        st.error(
+            f"🆘 **HIPOGLUCEMIA** — {glucose:.0f} mg/dL\n\n"
+            "Tomar azúcar de acción rápida (jugo, glucosa, caramelo) de inmediato. "
+            "Medir nuevamente en 15 minutos.",
+        )
+    else:
+        st.error(
+            f"🆘 **HIPERGLUCEMIA SEVERA** — {glucose:.0f} mg/dL\n\n"
+            "Revisar dosis de insulina. Hidratarse bien. Consultar con el médico si persiste.",
+        )
+elif alert_level == "warning":
+    if glucose < 70:
+        st.warning(f"🚨 Glucosa baja: {glucose:.0f} mg/dL — Considera una corrección.")
+    else:
+        st.warning(f"⚠️ Glucosa alta: {glucose:.0f} mg/dL — Revisa si se aplicó la insulina.")
+else:
+    st.success(f"✅ Glucosa en rango: {glucose:.0f} mg/dL")
 
 st.divider()
 
-# ─── Chart últimas 3 horas ─────────────────────────────────────────────────────
+# ─── Mini-chart últimas 3 horas ───────────────────────────────────────────────
 st.subheader("Últimas 3 horas")
-st.info("TODO: Chart interactivo con Plotly — GET /api/readings/range")
+recent = api.get_readings_last_hours(3)
+mini_chart(recent, title="")
 
+# ─── Info de refresh ─────────────────────────────────────────────────────────
 st.divider()
-
-# ─── Predicción próximos 30 minutos ───────────────────────────────────────────
-st.subheader("🔮 Predicción — próximos 30 min")
-pred_col1, pred_col2 = st.columns(2)
-with pred_col1:
-    st.metric("En 15 minutos", "— mg/dL", delta="confianza: —")
-with pred_col2:
-    st.metric("En 30 minutos", "— mg/dL", delta="confianza: —")
-
-st.caption("Modelo basado en tendencia de las últimas 4 lecturas")
+col1, col2 = st.columns(2)
+with col1:
+    st.caption("🔄 Esta página se actualiza automáticamente cada 2 minutos.")
+with col2:
+    if st.button("↺ Actualizar ahora"):
+        st.rerun()

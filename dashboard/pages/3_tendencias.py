@@ -1,61 +1,196 @@
 """
-Página: Tendencias históricas.
-TIR diario, eA1C trending, patrones detectados por IA.
+Página 3 — Tendencias.
+TIR histórico diario, métricas de la semana y comparativa de días.
 """
 
-import streamlit as st
 from datetime import date
 
-st.set_page_config(page_title="Tendencias | Glucose Intelligence", layout="wide")
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
 
-st.title("📈 Tendencias y Patrones")
+import dashboard.api_client as api
+from dashboard.components import api_status_banner
 
-# ─── Selector de período ───────────────────────────────────────────────────────
-period = st.selectbox(
-    "Período de análisis",
-    options=["Última semana (7 días)", "Últimas 2 semanas", "Último mes (30 días)"],
-    index=0,
+st.set_page_config(
+    page_title="Tendencias | Glucose Intelligence",
+    page_icon="📈",
+    layout="wide",
 )
 
-st.divider()
+with st.sidebar:
+    st.title("🩸 Glucose Intelligence")
+    online = api.is_api_online()
+    api_status_banner(online)
 
-# ─── TIR histórico diario ──────────────────────────────────────────────────────
-st.subheader("Time In Range — histórico")
-st.info("TODO: Barchart diario de TIR con línea de objetivo (70%) — GET /api/summaries/weekly")
+st.title("📈 Tendencias y Progreso")
 
-# ─── eA1C trending ────────────────────────────────────────────────────────────
-st.subheader("HbA1c Estimada (GMI) — trending")
-st.info("TODO: Línea de eA1C estimada con banda de confianza")
+if not online:
+    st.error("API no disponible.")
+    st.stop()
 
-st.divider()
+# ─── Resumen semanal ──────────────────────────────────────────────────────────
+weekly = api.get_weekly_summary()
 
-# ─── Patrones detectados por IA ───────────────────────────────────────────────
-st.subheader("🧠 Patrones Clínicos Detectados")
+if not weekly or not weekly.get("days"):
+    st.warning("Sin datos semanales disponibles. El monitor necesita al menos 1 día de datos.")
+    st.stop()
 
-# Ejemplos de lo que el sistema detectará:
-with st.expander("¿Qué patrones detecta el sistema?"):
-    st.markdown("""
-    | Patrón | Descripción clínica |
-    |--------|---------------------|
-    | **Fenómeno del amanecer** | Hiperglucemia 4-8am sin ingesta nocturna |
-    | **Rebote post-hipoglucemia** | Efecto Somogyi: hiperglucemia tras hipo nocturna |
-    | **Pico post-prandial** | Spike >60 mg/dL en 45-90 min post-comida (inferido) |
-    | **Hipoglucemia nocturna** | Episodios <70 mg/dL entre 00:00-06:00 |
-    | **Días con mal control** | Clustering de días con TIR <50% |
-    | **Patrón semanal** | Días de la semana con peor/mejor control |
-    """)
+days = weekly["days"]
 
-st.info("TODO: Lista de patrones detectados por Azure OpenAI — GET /api/reports/generate")
+# ─── KPIs semanales ───────────────────────────────────────────────────────────
+st.subheader(f"Semana {weekly['week_start']} — {weekly['week_end']}")
 
-st.divider()
-
-# ─── Mejores y peores días ────────────────────────────────────────────────────
-col1, col2 = st.columns(2)
-
+col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
-    st.subheader("✅ Mejores días")
-    st.info("TODO: Top 3 días con mejor TIR del período")
-
+    tir = weekly["avg_tir_percent"]
+    icon = "✅" if tir >= 70 else ("⚠️" if tir >= 50 else "🔴")
+    st.metric(f"{icon} TIR promedio", f"{tir}%", delta="objetivo >70%")
 with col2:
-    st.subheader("⚠️ Días con más episodios")
-    st.info("TODO: Días con más hipoglucemias o hiperglucemias")
+    cv = weekly["avg_cv_percent"]
+    icon = "✅" if cv <= 36 else ("⚠️" if cv <= 45 else "🔴")
+    st.metric(f"{icon} CV promedio", f"{cv}%", delta="objetivo <36%")
+with col3:
+    gmi = weekly["gmi_percent"]
+    icon = "✅" if gmi <= 7.0 else ("⚠️" if gmi <= 8.0 else "🔴")
+    st.metric(f"{icon} GMI semanal", f"{gmi}%", delta="HbA1c estimada")
+with col4:
+    st.metric("💉 Hipoglucemias", str(weekly["total_hypo_episodes"]), delta="episodios")
+with col5:
+    st.metric("📈 Hiperglucemias", str(weekly["total_hyper_episodes"]), delta="episodios")
+
+st.divider()
+
+# ─── TIR por día (barras apiladas) ────────────────────────────────────────────
+st.subheader("Distribución del tiempo glucémico por día")
+st.caption("Cada barra muestra cómo se repartió el día entre rango, hiper e hipo")
+
+df_days = pd.DataFrame(days)
+
+# Barras apiladas: TBR + TIR + TAR
+fig_stack = go.Figure()
+
+fig_stack.add_bar(
+    name="Hipo (<70) 🟡",
+    x=df_days["date"], y=df_days["tbr_percent"],
+    marker_color="#F39C12", text=df_days["tbr_percent"].apply(lambda x: f"{x:.0f}%"),
+    textposition="inside",
+)
+fig_stack.add_bar(
+    name="En rango (70-180) 🟢",
+    x=df_days["date"], y=df_days["tir_percent"],
+    marker_color="#2ECC71", text=df_days["tir_percent"].apply(lambda x: f"{x:.0f}%"),
+    textposition="inside",
+)
+fig_stack.add_bar(
+    name="Hiper (>180) 🔴",
+    x=df_days["date"], y=df_days["tar_percent"],
+    marker_color="#E74C3C", text=df_days["tar_percent"].apply(lambda x: f"{x:.0f}%"),
+    textposition="inside",
+)
+
+fig_stack.add_hline(y=70, line_dash="dash", line_color="#27AE60",
+                    annotation_text="objetivo TIR 70%")
+
+fig_stack.update_layout(
+    barmode="stack",
+    height=380,
+    yaxis=dict(title="% del día", range=[0, 100]),
+    xaxis=dict(title="Fecha"),
+    plot_bgcolor="white",
+    paper_bgcolor="white",
+    legend=dict(orientation="h", yanchor="bottom", y=1.01),
+    margin=dict(l=40, r=20, t=50, b=40),
+)
+st.plotly_chart(fig_stack, use_container_width=True)
+
+st.divider()
+
+# ─── Glucosa promedio y GMI por día ───────────────────────────────────────────
+col_avg, col_cv = st.columns(2)
+
+with col_avg:
+    st.subheader("Glucosa promedio por día")
+    fig_avg = px.bar(
+        df_days, x="date", y="avg_glucose_mgdl",
+        color="avg_glucose_mgdl",
+        color_continuous_scale=["#2ECC71", "#F39C12", "#E74C3C"],
+        range_color=[80, 250],
+        labels={"avg_glucose_mgdl": "mg/dL", "date": "Fecha"},
+        height=300,
+    )
+    fig_avg.add_hline(y=154, line_dash="dash", line_color="#27AE60",
+                      annotation_text="~GMI 7%")
+    fig_avg.update_layout(
+        plot_bgcolor="white", paper_bgcolor="white",
+        margin=dict(l=40, r=20, t=20, b=40),
+        showlegend=False,
+    )
+    st.plotly_chart(fig_avg, use_container_width=True)
+
+with col_cv:
+    st.subheader("Variabilidad (CV%) por día")
+    colors = ["#E74C3C" if v > 45 else ("#F39C12" if v > 36 else "#2ECC71")
+              for v in df_days["cv_percent"]]
+    fig_cv = go.Figure(go.Bar(
+        x=df_days["date"], y=df_days["cv_percent"],
+        marker_color=colors,
+        text=df_days["cv_percent"].apply(lambda x: f"{x:.0f}%"),
+        textposition="outside",
+    ))
+    fig_cv.add_hline(y=36, line_dash="dash", line_color="#27AE60",
+                     annotation_text="objetivo <36%")
+    fig_cv.update_layout(
+        height=300, plot_bgcolor="white", paper_bgcolor="white",
+        yaxis=dict(title="CV%"),
+        margin=dict(l=40, r=20, t=20, b=40),
+    )
+    st.plotly_chart(fig_cv, use_container_width=True)
+
+st.divider()
+
+# ─── Tabla comparativa de días ────────────────────────────────────────────────
+st.subheader("Comparativa de días")
+
+display_cols = {
+    "date": "Fecha",
+    "reading_count": "Lecturas",
+    "avg_glucose_mgdl": "Prom (mg/dL)",
+    "tir_percent": "TIR%",
+    "tar_percent": "TAR%",
+    "tbr_percent": "TBR%",
+    "cv_percent": "CV%",
+    "gmi_percent": "GMI%",
+    "hypo_episodes": "Hipoglucemias",
+    "hyper_episodes": "Hiperglucemias",
+}
+
+df_show = df_days[list(display_cols.keys())].rename(columns=display_cols)
+
+
+def _color_tir(val: float) -> str:
+    if val >= 70: return "background-color: #d4edda"
+    if val >= 50: return "background-color: #fff3cd"
+    return "background-color: #f8d7da"
+
+
+def _color_cv(val: float) -> str:
+    if val <= 36: return "background-color: #d4edda"
+    if val <= 45: return "background-color: #fff3cd"
+    return "background-color: #f8d7da"
+
+
+styled = (
+    df_show.style
+    .applymap(_color_tir, subset=["TIR%"])
+    .applymap(_color_cv, subset=["CV%"])
+    .format({"Prom (mg/dL)": "{:.1f}", "TIR%": "{:.1f}",
+             "TAR%": "{:.1f}", "TBR%": "{:.1f}",
+             "CV%": "{:.1f}", "GMI%": "{:.2f}"})
+)
+
+st.dataframe(styled, use_container_width=True, hide_index=True)
+
+st.divider()
+st.caption("💡 Con más días de datos aparecerán patrones más claros. La **Fase 4** agregará análisis de patrones con IA.")
