@@ -12,15 +12,15 @@ import streamlit as st
 # Umbrales
 VERY_LOW, LOW, HIGH, VERY_HIGH = 54, 70, 180, 250
 
-# Colores por zona
-COLOR_VERY_LOW  = "rgba(192, 57,  43,  0.20)"
-COLOR_LOW       = "rgba(255, 107, 107, 0.15)"
-COLOR_IN_RANGE  = "rgba(46,  204, 113, 0.10)"
-COLOR_HIGH      = "rgba(243, 156, 18,  0.15)"
-COLOR_VERY_HIGH = "rgba(231, 76,  60,  0.20)"
+# Colores por zona — alpha moderado para que sean visibles sobre fondo oscuro
+COLOR_VERY_LOW  = "rgba(220, 53,  69,  0.35)"
+COLOR_LOW       = "rgba(255, 140,  0,  0.25)"
+COLOR_IN_RANGE  = "rgba(40,  167, 69,  0.20)"
+COLOR_HIGH      = "rgba(255, 140,  0,  0.25)"
+COLOR_VERY_HIGH = "rgba(220, 53,  69,  0.35)"
 
-GLUCOSE_LINE    = "#2C3E50"
-THRESHOLD_COLOR = "#E74C3C"
+GLUCOSE_LINE    = "#00D4FF"          # cian brillante — visible sobre fondo oscuro
+THRESHOLD_COLOR = "#FF6B6B"
 THRESHOLD_STYLE = dict(color=THRESHOLD_COLOR, width=1.5, dash="dash")
 
 
@@ -127,28 +127,33 @@ def _base_glucose_figure(df: pd.DataFrame, title: str, height: int = 400) -> go.
     for y in (VERY_LOW, VERY_HIGH):
         fig.add_hline(y=y, line=dict(color="#8E44AD", width=1, dash="dot"), opacity=0.6)
 
-    # Línea de glucosa
+    # Línea de glucosa — cian brillante, gruesa, visible sobre fondo oscuro
     fig.add_trace(go.Scatter(
         x=df["timestamp"],
         y=df["glucose_mgdl"],
         mode="lines+markers",
         name="Glucosa",
-        line=dict(color=GLUCOSE_LINE, width=2.5),
-        marker=dict(size=5, color=GLUCOSE_LINE),
+        line=dict(color=GLUCOSE_LINE, width=3),
+        marker=dict(size=6, color=GLUCOSE_LINE, line=dict(color="white", width=1)),
         hovertemplate="<b>%{y:.0f} mg/dL</b><br>%{x|%H:%M}<extra></extra>",
+        zorder=10,
     ))
 
     fig.update_layout(
-        title=dict(text=title, font=dict(size=13)),
+        title=dict(text=title, font=dict(size=13, color="#e0e0e0")),
         height=height,
-        xaxis=dict(title="Hora", tickformat="%H:%M", gridcolor="#3a3a3a"),
-        yaxis=dict(title="Glucosa (mg/dL)", range=[0, y_max], gridcolor="#3a3a3a"),
-        plot_bgcolor="#1e1e1e",
-        paper_bgcolor="#1e1e1e",
+        xaxis=dict(title="Hora", tickformat="%H:%M",
+                   gridcolor="#2a2a2a", color="#b0b0b0", title_font=dict(color="#b0b0b0")),
+        yaxis=dict(title="Glucosa (mg/dL)", range=[0, y_max],
+                   gridcolor="#2a2a2a", color="#b0b0b0", title_font=dict(color="#b0b0b0")),
+        plot_bgcolor="#141414",
+        paper_bgcolor="#141414",
         font=dict(color="#e0e0e0"),
         showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1,
-                    bgcolor="rgba(30,30,30,0.8)", font=dict(color="#e0e0e0")),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1,
+            bgcolor="rgba(20,20,20,0.9)", font=dict(color="#e0e0e0"), borderwidth=0,
+        ),
         margin=dict(l=50, r=20, t=70, b=50),
         hovermode="x unified",
     )
@@ -255,6 +260,6 @@ def api_status_banner(online: bool) -> None:
         st.success("API conectada", icon="🟢")
     else:
         st.error(
-            "API no disponible — inicia el backend con: `uvicorn api.main:app --port 8000`",
+            "API no disponible — inicia el backend:\n`uvicorn api.main:app --port 8888 --reload`",
             icon="🔴",
         )
