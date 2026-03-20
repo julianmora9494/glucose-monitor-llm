@@ -3,6 +3,11 @@ Página 1 — Tiempo Real.
 Glucosa actual con auto-refresh cada 2 minutos.
 """
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 

@@ -3,6 +3,12 @@ Glucose Intelligence Dashboard — página principal.
 Ejecutar con: streamlit run dashboard/app.py
 """
 
+import sys
+from pathlib import Path
+
+# Asegurar que la raíz del proyecto esté en sys.path para imports de dashboard.*
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from datetime import date
 
 import streamlit as st
@@ -46,7 +52,7 @@ st.caption(f"Actualizado: {date.today().strftime('%d de %B de %Y')}")
 
 if not online:
     st.warning("Inicia el backend para ver los datos en tiempo real.")
-    st.code("uvicorn api.main:app --port 8000 --reload")
+    st.code("uvicorn api.main:app --port 8080 --reload")
     st.stop()
 
 # ─── Lectura actual ───────────────────────────────────────────────────────────

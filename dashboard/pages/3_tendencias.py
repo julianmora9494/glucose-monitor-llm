@@ -3,6 +3,11 @@ Página 3 — Tendencias.
 TIR histórico diario, métricas de la semana y comparativa de días.
 """
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
 from datetime import date
 
 import pandas as pd

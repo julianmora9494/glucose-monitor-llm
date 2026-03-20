@@ -3,6 +3,11 @@ Página 2 — Análisis Diario.
 Chart AGP interactivo del día + métricas clínicas completas.
 """
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
 from datetime import date, timedelta
 
 import streamlit as st
