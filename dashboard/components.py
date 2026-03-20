@@ -145,7 +145,7 @@ def _base_glucose_figure(df: pd.DataFrame, title: str, height: int = 400) -> go.
         yaxis=dict(title="Glucosa (mg/dL)", range=[0, y_max], gridcolor="rgba(128,128,128,0.2)"),
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="inherit"),
+
         showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1,
                     bgcolor="rgba(0,0,0,0)"),

@@ -116,7 +116,7 @@ fig_stack.update_layout(
     xaxis=dict(title="Fecha"),
     plot_bgcolor="rgba(0,0,0,0)",
     paper_bgcolor="rgba(0,0,0,0)",
-    font=dict(color="inherit"),
+
     legend=dict(
         orientation="h",
         yanchor="bottom", y=1.02,
@@ -146,7 +146,7 @@ with col_avg:
                       annotation_text="~GMI 7%")
     fig_avg.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="inherit"),
+    
         margin=dict(l=40, r=20, t=20, b=40),
         showlegend=False,
     )
@@ -167,7 +167,7 @@ with col_cv:
     fig_cv.update_layout(
         height=300,
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="inherit"),
+    
         yaxis=dict(title="CV%", gridcolor="rgba(128,128,128,0.2)"),
         margin=dict(l=40, r=20, t=20, b=40),
     )
