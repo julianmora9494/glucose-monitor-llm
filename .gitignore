@@ -28,9 +28,11 @@ glucose_monitor.log
 glucose_state.json
 Untitled
 
-# ─── Historial clínico: archivos raw con datos sensibles (PHI) ───────────────
+# ─── Historial clínico: TODO es PHI, nada va a git ──────────────────────────
 clinical_history/uploads/*
+clinical_history/processed/*
 !clinical_history/uploads/.gitkeep
+!clinical_history/processed/.gitkeep
 Examenes_resultados/
 
 # ─── IDE y OS ─────────────────────────────────────────────────────────────────
