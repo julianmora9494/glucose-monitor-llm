@@ -17,15 +17,19 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL", "data/glucose.duckdb")
 
 
-def get_connection() -> duckdb.DuckDBPyConnection:
-    """Retorna una conexión al archivo DuckDB."""
+def get_connection(read_only: bool = True) -> duckdb.DuckDBPyConnection:
+    """
+    Retorna una conexión al archivo DuckDB.
+    Por defecto read_only=True para no bloquear las escrituras del monitor.
+    Usar read_only=False solo para operaciones de escritura (upsert_daily_summary).
+    """
     Path(DATABASE_URL).parent.mkdir(parents=True, exist_ok=True)
-    return duckdb.connect(DATABASE_URL)
+    return duckdb.connect(DATABASE_URL, read_only=read_only)
 
 
 def initialize_schema() -> None:
     """Crea las tablas si no existen. Idempotente."""
-    con = get_connection()
+    con = get_connection(read_only=False)
     con.execute("""
         CREATE TABLE IF NOT EXISTS readings (
             id              INTEGER PRIMARY KEY,
@@ -79,7 +83,7 @@ def insert_reading(
     Inserta una lectura nueva. Retorna True si se insertó, False si ya existía
     (deduplicación por timestamp exacto).
     """
-    con = get_connection()
+    con = get_connection(read_only=False)
     try:
         existing = con.execute(
             "SELECT COUNT(*) FROM readings WHERE timestamp = ?",
@@ -162,7 +166,7 @@ def get_latest_reading() -> Optional[dict]:
 
 def upsert_daily_summary(summary: dict) -> None:
     """Inserta o actualiza el resumen del día."""
-    con = get_connection()
+    con = get_connection(read_only=False)
     try:
         con.execute("""
             INSERT OR REPLACE INTO daily_summaries VALUES (
