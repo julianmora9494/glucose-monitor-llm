@@ -141,14 +141,14 @@ def _base_glucose_figure(df: pd.DataFrame, title: str, height: int = 400) -> go.
     fig.update_layout(
         title=dict(text=title, font=dict(size=13)),
         height=height,
-        xaxis=dict(title="Hora", tickformat="%H:%M", gridcolor="rgba(128,128,128,0.2)"),
-        yaxis=dict(title="Glucosa (mg/dL)", range=[0, y_max], gridcolor="rgba(128,128,128,0.2)"),
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-
+        xaxis=dict(title="Hora", tickformat="%H:%M", gridcolor="#3a3a3a"),
+        yaxis=dict(title="Glucosa (mg/dL)", range=[0, y_max], gridcolor="#3a3a3a"),
+        plot_bgcolor="#1e1e1e",
+        paper_bgcolor="#1e1e1e",
+        font=dict(color="#e0e0e0"),
         showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1,
-                    bgcolor="rgba(0,0,0,0)"),
+                    bgcolor="rgba(30,30,30,0.8)", font=dict(color="#e0e0e0")),
         margin=dict(l=50, r=20, t=70, b=50),
         hovermode="x unified",
     )

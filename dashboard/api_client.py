@@ -10,7 +10,7 @@ from typing import Optional
 import requests
 from requests.exceptions import ConnectionError, Timeout
 
-API_URL = os.getenv("API_URL", "http://localhost:8080")
+API_URL = os.getenv("API_URL", "http://localhost:8888")
 TIMEOUT = 10  # segundos
 
 

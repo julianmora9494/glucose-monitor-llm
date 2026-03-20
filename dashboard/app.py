@@ -52,7 +52,7 @@ st.caption(f"Actualizado: {date.today().strftime('%d de %B de %Y')}")
 
 if not online:
     st.warning("Inicia el backend para ver los datos en tiempo real.")
-    st.code("uvicorn api.main:app --port 8080 --reload")
+    st.code("uvicorn api.main:app --port 8888 --reload")
     st.stop()
 
 # ─── Lectura actual ───────────────────────────────────────────────────────────

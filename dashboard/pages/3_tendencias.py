@@ -112,16 +112,17 @@ fig_stack.add_hline(y=70, line_dash="dash", line_color="#27AE60",
 fig_stack.update_layout(
     barmode="stack",
     height=400,
-    yaxis=dict(title="% del día", range=[0, 100], gridcolor="rgba(128,128,128,0.2)"),
+    yaxis=dict(title="% del día", range=[0, 100], gridcolor="#3a3a3a"),
     xaxis=dict(title="Fecha"),
-    plot_bgcolor="rgba(0,0,0,0)",
-    paper_bgcolor="rgba(0,0,0,0)",
-
+    plot_bgcolor="#1e1e1e",
+    paper_bgcolor="#1e1e1e",
+    font=dict(color="#e0e0e0"),
     legend=dict(
         orientation="h",
         yanchor="bottom", y=1.02,
         xanchor="center", x=0.5,
-        bgcolor="rgba(0,0,0,0)",
+        bgcolor="rgba(30,30,30,0.8)",
+        font=dict(color="#e0e0e0"),
     ),
     margin=dict(l=40, r=20, t=60, b=40),
 )
@@ -145,8 +146,8 @@ with col_avg:
     fig_avg.add_hline(y=154, line_dash="dash", line_color="#27AE60",
                       annotation_text="~GMI 7%")
     fig_avg.update_layout(
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-    
+        plot_bgcolor="#1e1e1e", paper_bgcolor="#1e1e1e",
+        font=dict(color="#e0e0e0"),
         margin=dict(l=40, r=20, t=20, b=40),
         showlegend=False,
     )
@@ -166,9 +167,9 @@ with col_cv:
                      annotation_text="objetivo <36%")
     fig_cv.update_layout(
         height=300,
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-    
-        yaxis=dict(title="CV%", gridcolor="rgba(128,128,128,0.2)"),
+        plot_bgcolor="#1e1e1e", paper_bgcolor="#1e1e1e",
+        font=dict(color="#e0e0e0"),
+        yaxis=dict(title="CV%", gridcolor="#3a3a3a"),
         margin=dict(l=40, r=20, t=20, b=40),
     )
     st.plotly_chart(fig_cv, use_container_width=True)
