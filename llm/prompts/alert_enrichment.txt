@@ -1,8 +1,0 @@
-ALERTA GLUCÉMICA DETECTADA:
-{alert_data}
-
-Como endocrinólogo, en máximo 2 oraciones explica:
-- Qué está pasando y por qué es importante
-- Qué debe hacer ahora el cuidador o la paciente
-
-Sé directo y conciso. Este mensaje se envía por Telegram.

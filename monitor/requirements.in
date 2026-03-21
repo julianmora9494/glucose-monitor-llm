@@ -1,8 +1,0 @@
-pylibrelinkup
-python-dotenv
-requests
-matplotlib
-pandas
-numpy
-duckdb
-pip-tools

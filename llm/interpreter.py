@@ -11,7 +11,7 @@ from typing import Any
 from openai import AzureOpenAI
 
 
-PATIENT_PROFILE_PATH = Path("clinical_history/processed/patient_profile.json")
+PATIENT_PROFILE_PATH = Path("Examenes_resultados/patient_profile.json")
 
 SYSTEM_PROMPT_TEMPLATE = """
 Eres un médico endocrinólogo especialista en diabetes con 20 años de experiencia.
@@ -90,8 +90,8 @@ class GlucoseInterpreter:
                 {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": user_message},
             ],
-            max_tokens=400,
-            temperature=0.3,  # Baja temperatura para respuestas consistentes y médicamente precisas
+            max_completion_tokens=400,
+
         )
 
         return response.choices[0].message.content or ""
@@ -120,8 +120,8 @@ class GlucoseInterpreter:
                 {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": user_message},
             ],
-            max_tokens=150,
-            temperature=0.3,
+            max_completion_tokens=150,
+
         )
 
         return response.choices[0].message.content or ""
@@ -136,20 +136,31 @@ class GlucoseInterpreter:
         Retorna diccionario con secciones separadas del informe.
         """
         user_message = f"""
-        Genera un informe médico completo para el siguiente período:
+        Genera un informe médico DETALLADO y EXPLICATIVO para el siguiente período.
+        Este informe es para que la paciente y su cuidador lo lleven a la consulta con el endocrinólogo.
 
+        DATOS DEL PERÍODO:
         {json.dumps(period_data, ensure_ascii=False, indent=2)}
+
+        INSTRUCCIONES IMPORTANTES:
+        - NO repitas las métricas numéricas (TIR%, TAR%, CV%, etc.) como lista — el dashboard ya las muestra.
+        - En su lugar, INTERPRETA qué significan clínicamente para ESTA paciente específica.
+        - Relaciona los datos con su perfil: medicamentos actuales, HbA1c, comorbilidades.
+        - Explica en lenguaje claro pero completo, como si hablaras con la paciente y su familia.
+        - Identifica patrones temporales: ¿los picos son post-prandiales? ¿hay fenómeno del amanecer?
+        - Conecta los hallazgos con posibles causas (alimentación, insulina, estrés, horarios).
 
         El informe debe incluir estas secciones en formato JSON:
         {{
-            "executive_summary": "Resumen ejecutivo (3-4 oraciones)",
-            "glycemic_control": "Análisis detallado del control glucémico",
-            "patterns_detected": ["patrón 1", "patrón 2", ...],
-            "recommendations": ["recomendación 1", "recomendación 2", ...],
-            "for_physician": "Sección técnica para el médico tratante"
+            "executive_summary": "Resumen narrativo del período (4-5 oraciones). Explica cómo le fue a la paciente, qué mejoró, qué empeoró y por qué es relevante clínicamente. Relaciona con su HbA1c y esquema de insulina.",
+            "glycemic_control": "Análisis clínico detallado: interpreta los datos en el contexto de su DM1, esquema basal-bolo, metformina. Explica qué indican los patrones glucémicos sobre la efectividad del tratamiento actual. Mínimo 150 palabras.",
+            "patterns_detected": ["Cada patrón debe incluir: descripción + hora/momento + posible causa + implicación clínica"],
+            "recommendations": ["Cada recomendación debe ser específica y accionable. Incluir: qué hacer, cuándo, y por qué. Ejemplo: 'Revisar con el médico la dosis de glulisina del almuerzo (actualmente 20 UI) — los picos post-prandiales de 12-14h sugieren que podría necesitar ajuste'"],
+            "for_physician": "Sección técnica con lenguaje médico formal: resumen de métricas AGP, patrones identificados, posibles ajustes terapéuticos sugeridos para discutir. Incluir: evaluación de la dosis basal (degludec 40 UI), ratio insulina/CHO, posible interacción con metformina 850mg."
         }}
 
-        {'Incluye recomendaciones específicas y accionables.' if include_recommendations else 'No incluyas recomendaciones.'}
+        {'Incluye recomendaciones específicas, accionables y personalizadas para esta paciente.' if include_recommendations else 'No incluyas recomendaciones.'}
+        Mínimo 500 palabras en total. Este informe debe aportar valor clínico real, no solo repetir números.
         """
 
         response = self.client.chat.completions.create(
@@ -158,8 +169,8 @@ class GlucoseInterpreter:
                 {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": user_message},
             ],
-            max_tokens=1500,
-            temperature=0.3,
+            max_completion_tokens=3000,
+
             response_format={"type": "json_object"},
         )
 
@@ -188,8 +199,8 @@ class GlucoseInterpreter:
                 {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": user_message},
             ],
-            max_tokens=500,
-            temperature=0.3,
+            max_completion_tokens=500,
+
             response_format={"type": "json_object"},
         )
 

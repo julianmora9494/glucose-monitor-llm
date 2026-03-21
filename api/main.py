@@ -18,10 +18,9 @@ from api.services.db import initialize_schema
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
-    """Inicializa recursos al arrancar la API."""
+    """Inicializa schema DuckDB al arrancar. La API es el unico proceso que toca DuckDB."""
     initialize_schema()
     yield
-    # cleanup al apagar (si se necesita en el futuro)
 
 
 app = FastAPI(

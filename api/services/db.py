@@ -17,11 +17,12 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL", "data/glucose.duckdb")
 
 
-def get_connection(read_only: bool = True) -> duckdb.DuckDBPyConnection:
+def get_connection(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     """
     Retorna una conexión al archivo DuckDB.
-    Por defecto read_only=True para no bloquear las escrituras del monitor.
-    Usar read_only=False solo para operaciones de escritura (upsert_daily_summary).
+    Solo la API toca DuckDB — el monitor escribe via POST /api/readings.
+    read_only=False por defecto: las conexiones read-only usan snapshots
+    y no ven writes recientes en el mismo archivo.
     """
     Path(DATABASE_URL).parent.mkdir(parents=True, exist_ok=True)
     return duckdb.connect(DATABASE_URL, read_only=read_only)
@@ -143,12 +144,13 @@ def get_latest_reading() -> Optional[dict]:
     """Retorna la lectura más reciente como diccionario."""
     con = get_connection()
     try:
+        # Workaround: DuckDB LIMIT 1 con ORDER BY puede devolver filas incorrectas
+        # cuando hay inserciones concurrentes. Usar MAX(timestamp) es deterministico.
         row = con.execute("""
             SELECT timestamp, glucose_mgdl, trend, delta_mgdl,
                    slope_mgdl_min, range_type
             FROM readings
-            ORDER BY timestamp DESC
-            LIMIT 1
+            WHERE timestamp = (SELECT MAX(timestamp) FROM readings)
         """).fetchone()
         if not row:
             return None

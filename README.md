@@ -13,15 +13,16 @@
 LibreLinkUp API (FreeStyle Libre CGM)
       │
       ▼
-monitor/monitor_glucose.py   ← Polling cada 2 min, alertas Telegram, escribe en DuckDB
+monitor/monitor_glucose.py   ← Polling cada 2 min, alertas Telegram
       │
-      ▼
-data/glucose.duckdb          ← Base de datos central (local, gitignoreado)
+      ▼ POST /api/readings
       │
-      ├──► api/main.py        ← FastAPI: lecturas, métricas AGP, resúmenes, charts
+api/main.py (FastAPI)        ← Único escritor DuckDB (puerto 8888)
+      │                          Endpoints: lecturas, métricas AGP, reportes LLM
+      │
+      ├──► llm/interpreter.py ← Azure OpenAI: interpretación médica
       │
       └──► dashboard/app.py   ← Streamlit: 4 páginas de monitoreo clínico
-                                   (llm/interpreter.py en Fase 4)
 ```
 
 ---
@@ -34,7 +35,7 @@ data/glucose.duckdb          ← Base de datos central (local, gitignoreado)
 | 1 | DuckDB + métricas AGP + chart diario | ✅ Completo |
 | 2 | FastAPI — endpoints de lecturas y resúmenes | ✅ Completo |
 | 3 | Streamlit dashboard — 4 páginas clínicas | ✅ Completo |
-| 4 | Azure OpenAI — interpretación médica con IA | ⏳ Siguiente |
+| 4 | Azure OpenAI — interpretación médica con IA | ✅ Completo |
 | 5 | Telegram bot bidireccional + resúmenes diarios | ⏳ Pendiente |
 | 6 | Informe médico PDF exportable | ⏳ Pendiente |
 | 7 | Predicción glucémica 15–30 min | ⏳ Pendiente |
@@ -76,7 +77,7 @@ python scripts/import_history.py
 
 **Terminal 1 — FastAPI backend:**
 ```bash
-uvicorn api.main:app --port 8080 --reload
+uvicorn api.main:app --port 8888 --reload
 ```
 
 **Terminal 2 — Streamlit dashboard:**
@@ -90,7 +91,7 @@ python monitor/monitor_glucose.py
 ```
 
 El dashboard estará en: `http://localhost:8501`
-La API estará en: `http://localhost:8080/docs`
+La API estará en: `http://localhost:8888/docs`
 
 ---
 
@@ -118,8 +119,12 @@ La API estará en: `http://localhost:8080/docs`
 | GET | `/api/summaries/weekly` | Resumen de los últimos 7 días |
 | GET | `/api/summaries/chart/{date}` | PNG del perfil glucémico |
 | GET | `/api/summaries/available-dates` | Fechas con datos disponibles |
+| POST | `/api/readings` | Insertar nueva lectura (usado por monitor) |
+| GET | `/api/reports/llm-status` | Estado de configuración Azure OpenAI |
+| POST | `/api/reports/generate` | Generar informe médico con IA |
+| GET | `/api/reports/daily-interpretation/{date}` | Interpretación diaria con cache |
 
-Documentación interactiva: `http://localhost:8080/docs`
+Documentación interactiva: `http://localhost:8888/docs`
 
 ---
 
@@ -150,11 +155,12 @@ Copiar `.env.example` → `.env` y completar:
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Alertas Telegram |
 | `AZURE_OPENAI_API_KEY` / `ENDPOINT` / `DEPLOYMENT` | LLM (Fase 4) |
 | `DATABASE_URL` | Ruta DuckDB (default: `data/glucose.duckdb`) |
-| `API_PORT` | Puerto FastAPI (default: `8080`) |
+| `API_PORT` | Puerto FastAPI (default: `8888`) |
 
 ---
 
 ## Datos de la paciente
 
-Todo el historial clínico está en `clinical_history/` y es **gitignoreado** por privacidad (PHI).
+Todo el historial clínico está en `Examenes_resultados/` y es **gitignoreado** por privacidad (PHI).
+Incluye `patient_profile.json` — perfil clínico completo usado por el LLM (diagnósticos, medicamentos, laboratorios, alertas).
 Ver instrucciones en [CLAUDE.md](CLAUDE.md) para agregar exámenes o fórmulas médicas localmente.

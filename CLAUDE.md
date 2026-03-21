@@ -12,7 +12,7 @@ Sistema de monitoreo glucémico continuo con IA médica para el seguimiento de u
 ## Reglas del proyecto
 
 1. **Código en inglés, comentarios en español.**
-2. **NUNCA commitear datos de la paciente.** Todo en `clinical_history/` está en `.gitignore`. La carpeta `clinical_history/processed/` contiene PHI (Protected Health Information) — solo existe localmente.
+2. **NUNCA commitear datos de la paciente.** `Examenes_resultados/` está en `.gitignore` y contiene PHI (Protected Health Information) — solo existe localmente.
 3. **NUNCA commitear `.env`** con valores reales. Solo `.env.example` con placeholders.
 4. `requirements.txt` con versiones fijas.
 5. Type hints en todo el código Python.
@@ -26,7 +26,7 @@ Sistema de monitoreo glucémico continuo con IA médica para el seguimiento de u
 LibreLinkUp API (FreeStyle Libre CGM)
       │
       ▼
-monitor/monitor_glucose.py   ← Polling cada 2 min, escribe en DuckDB, alertas Telegram
+monitor/monitor_glucose.py   ← Polling cada 2 min, escribe via POST /api/readings, alertas Telegram
       │
       ▼
 data/glucose.duckdb          ← Base de datos central (LOCAL, gitignoreado)
@@ -51,35 +51,34 @@ scripts/import_history.py    ← Importación inicial: ~15 días del logbook Lib
 ```
 glucose-monitor-llm/
 ├── monitor/                   # Servicio CGM (producción)
-│   └── monitor_glucose.py     # Polling + alertas Telegram + escritura DuckDB
-├── api/                       # FastAPI backend (Fase 2 — completo)
+│   └── monitor_glucose.py     # Polling + alertas Telegram + POST /api/readings
+├── api/                       # FastAPI backend (puerto 8888)
 │   ├── main.py                # App + lifespan (initialize_schema on startup)
 │   ├── routers/
-│   │   ├── readings.py        # /api/readings/* — lecturas individuales
-│   │   └── summaries.py       # /api/summaries/* — métricas AGP, charts, fechas
-│   ├── models/                # Pydantic: ReadingResponse, DailySummary, WeeklySummary...
+│   │   ├── readings.py        # /api/readings/* — lecturas + POST desde monitor
+│   │   ├── summaries.py       # /api/summaries/* — métricas AGP, charts, fechas
+│   │   ├── reports.py         # /api/reports/* — informes médicos con Azure OpenAI
+│   │   └── predictions.py     # /api/predictions/* — predicción glucémica (Fase 7)
 │   └── services/
 │       ├── db.py              # DuckDB: conexión, schema, CRUD
 │       ├── metrics.py         # Cálculo TIR/TAR/TBR/CV/GMI/MAGE/episodios
 │       ├── chart.py           # Generación PNG del perfil glucémico diario
-│       └── llm_service.py     # Azure OpenAI (stub — Fase 4)
-├── dashboard/                 # Streamlit (Fase 3 — completo)
+│       └── llm_service.py     # Singleton GlucoseInterpreter + cache LLM
+├── dashboard/                 # Streamlit (puerto 8501)
 │   ├── app.py                 # Página principal: gauge + métricas hoy + mini-chart
-│   ├── api_client.py          # Cliente HTTP centralizado para FastAPI (puerto 8080)
+│   ├── api_client.py          # Cliente HTTP centralizado para FastAPI
 │   ├── components.py          # Componentes reutilizables: gauge, mini_chart, daily_chart...
 │   └── pages/
 │       ├── 1_tiempo_real.py   # Auto-refresh 2 min + alertas contextuales
 │       ├── 2_analisis_diario.py  # Selector de fecha + chart AGP + tabla de lecturas
 │       ├── 3_tendencias.py    # Barras apiladas TIR/TAR/TBR + CV% + tabla comparativa
-│       └── 4_informe_medico.py   # Resumen de período + puntos para consulta médica
+│       └── 4_informe_medico.py   # Informe médico con IA (Azure OpenAI)
 ├── scripts/
 │   └── import_history.py      # Importa ~15 días de logbook LibreLinkUp → DuckDB
-├── llm/                       # Azure OpenAI (Fase 4 — pendiente)
-│   ├── interpreter.py         # GlucoseInterpreter class
-│   └── prompts/               # Prompts de sistema
-├── clinical_history/          # Historial clínico (SOLO LOCAL — gitignoreado)
-│   ├── uploads/               # PDFs, fotos de exámenes, export ChatGPT
-│   └── processed/             # patient_profile.json, medical_notes.md
+├── llm/                       # Azure OpenAI
+│   └── interpreter.py         # GlucoseInterpreter class (prompts inline)
+├── Examenes_resultados/       # Datos clínicos PHI (SOLO LOCAL — gitignoreado)
+│   └── patient_profile.json   # Perfil clínico completo para el LLM
 ├── data/                      # DuckDB (gitignoreado)
 ├── charts/                    # PNGs generados (gitignoreado)
 ├── .env                       # Credenciales reales (gitignoreado)
@@ -133,8 +132,12 @@ CREATE TABLE daily_summaries (
 Toda inserción verifica `timestamp` exacto antes de insertar. Safe para re-ejecutar.
 
 ### DuckDB es single-writer
-No se puede tener el monitor + la API + el script de importación escribiendo simultáneamente.
-Orden seguro: detener monitor → importar historial → levantar API → levantar Streamlit → arrancar monitor.
+Solo la API toca DuckDB. El monitor escribe via POST /api/readings.
+Orden de arranque: FastAPI (DuckDB owner) → Monitor → Streamlit. Ver `start.ps1`.
+
+### Bug conocido: ORDER BY LIMIT 1
+DuckDB puede devolver filas stale con `ORDER BY timestamp DESC LIMIT 1`.
+Usar `WHERE timestamp = (SELECT MAX(timestamp) FROM readings)` en su lugar.
 
 ---
 
@@ -152,11 +155,12 @@ Orden seguro: detener monitor → importar historial → levantar API → levant
 
 ---
 
-## FastAPI — endpoints (puerto 8080)
+## FastAPI — endpoints (puerto 8888)
 
 | Ruta | Descripción |
 |------|-------------|
 | `GET /health` | Estado del servicio |
+| `POST /api/readings` | Recibe lectura del monitor (deduplicación por timestamp) |
 | `GET /api/readings/latest` | Última lectura + trend_description + alert_level + minutes_ago |
 | `GET /api/readings/day/{date}` | Lecturas de un día |
 | `GET /api/readings/last-hours/{n}` | Últimas N horas |
@@ -164,6 +168,9 @@ Orden seguro: detener monitor → importar historial → levantar API → levant
 | `GET /api/summaries/weekly` | Resumen 7 días (avg_tir, gmi, hypo/hyper totales...) |
 | `GET /api/summaries/chart/{date}` | FileResponse PNG del perfil glucémico |
 | `GET /api/summaries/available-dates` | Lista de fechas con datos |
+| `GET /api/reports/llm-status` | Verifica si Azure OpenAI está configurado |
+| `POST /api/reports/generate` | Genera informe médico con IA (período) |
+| `GET /api/reports/daily-interpretation/{date}` | Interpretación diaria con IA (cache) |
 
 ---
 
@@ -171,7 +178,7 @@ Orden seguro: detener monitor → importar historial → levantar API → levant
 
 Cada archivo de páginas tiene `sys.path.insert(0, ...)` para que Streamlit encuentre el paquete `dashboard` sin importar desde dónde se ejecute.
 
-El `api_client.py` lee `API_URL` del env (default `http://localhost:8080`). Para cambiar el puerto basta con setear `API_URL=http://localhost:XXXX` en el `.env`.
+El `api_client.py` lee `API_URL` del env (default `http://localhost:8888`).
 
 ### Fondos de charts
 Todos los charts usan `plot_bgcolor="rgba(0,0,0,0)"` y `paper_bgcolor="rgba(0,0,0,0)"` para adaptarse al dark/light mode de Streamlit sin fondo blanco.
@@ -186,7 +193,7 @@ Todos los charts usan `plot_bgcolor="rgba(0,0,0,0)"` y `paper_bgcolor="rgba(0,0,
 python scripts/import_history.py
 
 # Levantar FastAPI
-uvicorn api.main:app --port 8080 --reload
+uvicorn api.main:app --port 8888 --reload
 
 # Levantar dashboard
 streamlit run dashboard/app.py
@@ -199,33 +206,24 @@ python monitor/monitor_glucose.py
 
 ## Contexto clínico de la paciente
 
-> Los datos específicos están en `clinical_history/processed/patient_profile.json` (solo local).
+> Perfil completo en `Examenes_resultados/patient_profile.json` (solo local, gitignoreado).
 
 **Perfil general (no PHI):**
 - DM1 + hipotiroidismo
-- Esquema: insulina basal (degludec) + rápida titulable + metformina 850 mg
+- Esquema: insulina basal degludec 40 UI/día + rápida glulisina (20/20/18 UI titulable) + metformina 850 mg
 - Monitoreo: FreeStyle Libre 2 Plus
-- HbA1c objetivo: <7% (actual por encima del objetivo)
+- HbA1c: 7.82% (objetivo <7%)
 - Alertas: hipoglucemia <70, hiperglucemia >180, caídas/subidas rápidas >2 mg/dL/min
 
-**El LLM (Fase 4) cargará el perfil completo** desde `patient_profile.json` en cada llamada.
+**El LLM carga el perfil completo** desde `patient_profile.json` en cada llamada via `llm/interpreter.py`.
 
 ---
 
-## Cómo agregar información de la paciente (localmente)
+## Cómo agregar información de la paciente
 
-### Nuevos exámenes
-1. Copiar PDF/foto a `clinical_history/uploads/examenes/`
-2. Pegar el texto aquí → yo actualizo `patient_profile.json`
-
-### Nueva fórmula médica
-1. Copiar a `clinical_history/uploads/formulas/`
-2. Actualizar `current_medications` en `patient_profile.json`
-
-### Datos pendientes
-- Nombre exacto de la insulina rápida (¿glulisina / aspart?)
-- Dosis de levotiroxina
-- Resultados pendientes: prolactina, VIH, hepatitis B, Treponema, albúmina/creatinina
+1. Copiar PDF/foto a `Examenes_resultados/`
+2. Actualizar `Examenes_resultados/patient_profile.json` con los nuevos datos
+3. Reiniciar uvicorn para que el interpreter recargue el perfil
 
 ---
 
@@ -237,7 +235,7 @@ python monitor/monitor_glucose.py
 | 1 | DuckDB + métricas AGP + chart diario único | ✅ Completo |
 | 2 | FastAPI endpoints funcionales | ✅ Completo |
 | 3 | Streamlit dashboard — 4 páginas clínicas | ✅ Completo |
-| 4 | Azure OpenAI: interpretación médica en dashboard e informe | ⏳ Siguiente |
+| 4 | Azure OpenAI: interpretación médica en dashboard e informe | ✅ Completo |
 | 5 | Telegram bot bidireccional + resúmenes nocturnos automáticos | ⏳ Pendiente |
 | 6 | Informe médico PDF exportable | ⏳ Pendiente |
 | 7 | Predicción glucémica 15–30 min | ⏳ Pendiente |
@@ -251,5 +249,5 @@ Ver `.env.example`. Críticas:
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
 - `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT` (Fase 4)
 - `DATABASE_URL` (default: `data/glucose.duckdb`)
-- `API_PORT` (default: `8080`)
-- `API_URL` en dashboard (default: `http://localhost:8080`)
+- `API_PORT` (default: `8888`)
+- `API_URL` en dashboard (default: `http://localhost:8888`)

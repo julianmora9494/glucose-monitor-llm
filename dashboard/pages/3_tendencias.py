@@ -196,20 +196,35 @@ df_show = df_days[list(display_cols.keys())].rename(columns=display_cols)
 
 
 def _color_tir(val: float) -> str:
-    if val >= 70: return "background-color: #d4edda"
-    if val >= 50: return "background-color: #fff3cd"
-    return "background-color: #f8d7da"
+    # Colores con buen contraste en dark mode
+    if val >= 70: return "background-color: #1b5e20; color: #a5d6a7"
+    if val >= 50: return "background-color: #e65100; color: #ffcc80"
+    return "background-color: #b71c1c; color: #ef9a9a"
 
 
 def _color_cv(val: float) -> str:
-    if val <= 36: return "background-color: #d4edda"
-    if val <= 45: return "background-color: #fff3cd"
-    return "background-color: #f8d7da"
+    if val <= 36: return "background-color: #1b5e20; color: #a5d6a7"
+    if val <= 45: return "background-color: #e65100; color: #ffcc80"
+    return "background-color: #b71c1c; color: #ef9a9a"
+
+
+def _color_tar(val: float) -> str:
+    if val <= 25: return "background-color: #1b5e20; color: #a5d6a7"
+    if val <= 40: return "background-color: #e65100; color: #ffcc80"
+    return "background-color: #b71c1c; color: #ef9a9a"
+
+
+def _color_tbr(val: float) -> str:
+    if val <= 4: return "background-color: #1b5e20; color: #a5d6a7"
+    if val <= 10: return "background-color: #e65100; color: #ffcc80"
+    return "background-color: #b71c1c; color: #ef9a9a"
 
 
 styled = (
     df_show.style
     .applymap(_color_tir, subset=["TIR%"])
+    .applymap(_color_tar, subset=["TAR%"])
+    .applymap(_color_tbr, subset=["TBR%"])
     .applymap(_color_cv, subset=["CV%"])
     .format({"Prom (mg/dL)": "{:.1f}", "TIR%": "{:.1f}",
              "TAR%": "{:.1f}", "TBR%": "{:.1f}",
@@ -219,4 +234,4 @@ styled = (
 st.dataframe(styled, use_container_width=True, hide_index=True)
 
 st.divider()
-st.caption("💡 Con más días de datos aparecerán patrones más claros. La **Fase 4** agregará análisis de patrones con IA.")
+st.caption("💡 Con más días de datos aparecerán patrones más claros. Ve a **Informe Médico** para el análisis con IA.")

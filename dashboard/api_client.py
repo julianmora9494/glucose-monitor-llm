@@ -74,3 +74,40 @@ def get_available_dates() -> list[str]:
     """Fechas con datos disponibles."""
     result = _get("/api/summaries/available-dates")
     return result if isinstance(result, list) else []
+
+
+# ─── LLM / Informes medicos ─────────────────────────────────────────────────
+
+def is_llm_configured() -> bool:
+    """Verifica si Azure OpenAI esta configurado en el backend."""
+    result = _get("/api/reports/llm-status")
+    return result.get("configured", False) if isinstance(result, dict) else False
+
+
+def generate_medical_report(
+    date_from: date,
+    date_to: date,
+    include_recommendations: bool = True,
+) -> Optional[dict]:
+    """Genera informe medico con IA para un periodo."""
+    try:
+        r = requests.post(
+            f"{API_URL}/api/reports/generate",
+            json={
+                "date_from": str(date_from),
+                "date_to": str(date_to),
+                "include_recommendations": include_recommendations,
+            },
+            timeout=60,  # LLM puede tardar
+        )
+        if r.status_code == 200:
+            return r.json()
+        return None
+    except Exception:
+        return None
+
+
+def get_daily_interpretation(day: date, force: bool = False) -> Optional[dict]:
+    """Interpretacion clinica diaria con IA."""
+    params = {"force": "true"} if force else None
+    return _get(f"/api/reports/daily-interpretation/{day}", params=params)
