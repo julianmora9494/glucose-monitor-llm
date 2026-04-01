@@ -24,13 +24,11 @@ data/*.duckdb
 data/*.db
 charts/*.png
 charts/*.jpg
-glucose_monitor.log
+*.log
 glucose_state.json
 Untitled
 
-# ─── Historial clínico: archivos raw con datos sensibles (PHI) ───────────────
-clinical_history/uploads/*
-!clinical_history/uploads/.gitkeep
+# ─── Datos clinicos: PHI, nada va a git ──────────────────────────────────────
 Examenes_resultados/
 
 # ─── IDE y OS ─────────────────────────────────────────────────────────────────

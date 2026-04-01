@@ -1,0 +1,24 @@
+# ─── Monitor ─────────────────────────────────────────────────────────────────
+pylibrelinkup
+python-dotenv
+requests
+pandas
+matplotlib
+
+# ─── API (FastAPI + DuckDB) ──────────────────────────────────────────────────
+fastapi
+uvicorn[standard]
+duckdb
+scipy
+httpx
+pytz
+
+# ─── Dashboard (Streamlit) ───────────────────────────────────────────────────
+streamlit
+plotly
+
+# ─── LLM (Azure OpenAI) ─────────────────────────────────────────────────────
+openai
+
+# ─── Build ───────────────────────────────────────────────────────────────────
+pip-tools
