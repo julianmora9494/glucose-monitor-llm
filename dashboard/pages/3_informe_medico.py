@@ -193,3 +193,51 @@ else:
             st.caption(f"Generado: {report.get('generated_at', '')}")
         else:
             st.error("No se pudo generar el informe. Verificar la conexion con Azure OpenAI.")
+
+    # ─── Chat con IA ─────────────────────────────────────────────────────────
+    st.divider()
+    st.subheader("💬 Preguntale a la IA")
+    st.caption(
+        "Hazle preguntas sobre la paciente, sus datos glucemicos, medicamentos, "
+        "examenes o cualquier duda clinica. La IA tiene acceso al perfil completo "
+        "y a todo el historial del CGM."
+    )
+
+    # Inicializar historial de chat en session state
+    if "chat_messages" not in st.session_state:
+        st.session_state.chat_messages = []
+
+    # Mostrar historial de conversacion
+    for msg in st.session_state.chat_messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # Input de pregunta
+    if question := st.chat_input("Escribe tu pregunta aqui..."):
+        # Mostrar pregunta del usuario
+        with st.chat_message("user"):
+            st.markdown(question)
+
+        # Llamar a la API con historial
+        with st.chat_message("assistant"):
+            with st.spinner("Analizando..."):
+                response = api.chat_with_ai(
+                    question=question,
+                    conversation_history=st.session_state.chat_messages,
+                )
+
+            if response and response.get("answer"):
+                answer = response["answer"]
+                st.markdown(answer)
+
+                # Guardar en historial
+                st.session_state.chat_messages.append({"role": "user", "content": question})
+                st.session_state.chat_messages.append({"role": "assistant", "content": answer})
+            else:
+                st.error("No se pudo obtener respuesta. Verifica la conexion con Azure OpenAI.")
+
+    # Boton para limpiar chat
+    if st.session_state.chat_messages:
+        if st.button("🗑️ Limpiar conversacion"):
+            st.session_state.chat_messages = []
+            st.rerun()

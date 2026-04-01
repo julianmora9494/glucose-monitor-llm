@@ -162,7 +162,7 @@ def get_range(
             SELECT timestamp, glucose_mgdl, trend, delta_mgdl,
                    dt_min, slope_mgdl_min, percent_change, range_type
             FROM readings
-            WHERE CAST(timestamp AS DATE) BETWEEN ? AND ?
+            WHERE CAST(timestamp AT TIME ZONE 'America/Bogota' AS DATE) BETWEEN ? AND ?
             ORDER BY timestamp ASC
         """, [start, end]).df()
     finally:
@@ -185,18 +185,18 @@ def get_range(
 
 @router.get("/last-hours/{hours}", response_model=list[GlucoseReading])
 def get_last_hours(hours: int = 3) -> list[GlucoseReading]:
-    """Retorna lecturas de las ultimas N horas."""
+    """Retorna lecturas de las ultimas N horas relativas a la lectura mas reciente."""
     if hours > 24:
         raise HTTPException(status_code=400, detail="Maximo 24 horas")
 
-    # Usar NOW() de DuckDB para evitar problemas de timezone naive vs TIMESTAMPTZ
+    # Usar MAX(timestamp) como referencia para que funcione sin monitor activo
     con = get_connection()
     try:
         df = con.execute(f"""
             SELECT timestamp, glucose_mgdl, trend, delta_mgdl,
                    slope_mgdl_min, range_type
             FROM readings
-            WHERE timestamp >= NOW() - INTERVAL '{hours} hours'
+            WHERE timestamp >= (SELECT MAX(timestamp) FROM readings) - INTERVAL '{hours} hours'
             ORDER BY timestamp ASC
         """).df()
     finally:
@@ -242,8 +242,9 @@ def create_reading(payload: ReadingCreate) -> dict:
     if not inserted:
         return JSONResponse(status_code=200, content={"status": "duplicate", "inserted": False})
 
-    # Recalcular metricas diarias del dia de la lectura
-    reading_date = ts.date() if hasattr(ts, "date") else date.today()
+    # Recalcular metricas diarias del dia de la lectura (en hora Colombia)
+    ts_col = ts.tz_convert("America/Bogota") if ts.tzinfo else ts
+    reading_date = ts_col.date() if hasattr(ts_col, "date") else date.today()
     _recalculate_daily_summary(reading_date)
 
     return {"status": "created", "inserted": True}

@@ -19,6 +19,22 @@ foreach ($port in $ports) {
 }
 Start-Sleep -Seconds 2
 
+# 0. Importar CSVs de LibreView (antes de FastAPI, DuckDB single-writer)
+$csvDir = "$root\Examenes_resultados"
+$csvFiles = Get-ChildItem -Path $csvDir -Filter "*.csv" -ErrorAction SilentlyContinue
+if ($csvFiles.Count -gt 0) {
+    Write-Host "  [0/3] Importando $($csvFiles.Count) CSV(s) de LibreView..." -ForegroundColor Yellow
+    foreach ($csv in $csvFiles) {
+        Write-Host "    -> $($csv.Name)" -ForegroundColor DarkYellow
+        & $venv
+        python scripts/import_history.py --csv $csv.FullName
+    }
+    Write-Host "  Importacion completada." -ForegroundColor Yellow
+    Write-Host ""
+} else {
+    Write-Host "  [0/3] Sin CSVs nuevos en Examenes_resultados/" -ForegroundColor DarkGray
+}
+
 # 1. FastAPI (unico proceso que toca DuckDB)
 Write-Host "  [1/3] Arrancando FastAPI (DuckDB)..." -ForegroundColor Green
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$root'; & '$venv'; uvicorn api.main:app --port 8888 --reload" -WindowStyle Normal

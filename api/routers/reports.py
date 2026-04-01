@@ -16,6 +16,7 @@ from api.services.llm_service import (
     generate_report,
     interpret_daily,
     detect_patterns,
+    chat_answer,
     get_cached_llm_summary,
     cache_llm_summary,
 )
@@ -45,6 +46,15 @@ class DailyInterpretation(BaseModel):
     date: str
     interpretation: str
     cached: bool
+
+
+class ChatRequest(BaseModel):
+    question: str
+    conversation_history: list[dict[str, str]] = []
+
+
+class ChatResponse(BaseModel):
+    answer: str
 
 
 @router.get("/llm-status")
@@ -182,6 +192,76 @@ def get_daily_interpretation(
         interpretation=interpretation,
         cached=False,
     )
+
+
+@router.post("/chat", response_model=ChatResponse)
+def chat_with_ai(request: ChatRequest) -> ChatResponse:
+    """
+    Chat interactivo con el LLM medico.
+    Incluye automaticamente el perfil clinico y el historial glucemico completo.
+    """
+    if not is_llm_configured():
+        raise HTTPException(status_code=503, detail="Azure OpenAI no configurado")
+
+    if not request.question.strip():
+        raise HTTPException(status_code=400, detail="La pregunta no puede estar vacia")
+
+    # Construir contexto glucemico desde DuckDB
+    import json as _json
+    from api.services.db import get_connection
+    con = get_connection()
+    try:
+        # Resumen general — usar to_json para serializar timestamps correctamente
+        stats_df = con.execute("""
+            SELECT COUNT(*) as total,
+                   MIN(timestamp) as desde,
+                   MAX(timestamp) as hasta,
+                   AVG(glucose_mgdl) as promedio,
+                   MIN(glucose_mgdl) as minimo,
+                   MAX(glucose_mgdl) as maximo
+            FROM readings
+        """).fetchdf()
+        stats = _json.loads(stats_df.to_json(orient="records"))[0]
+
+        # Resumenes diarios recientes (ultimos 14 dias con datos)
+        daily_df = con.execute("""
+            SELECT date, reading_count, avg_glucose, cv_percent,
+                   tir_percent, tar_percent, tbr_percent, gmi_percent,
+                   hypo_episodes, hyper_episodes, mage_mgdl, min_glucose, max_glucose
+            FROM daily_summaries
+            ORDER BY date DESC
+            LIMIT 14
+        """).fetchdf()
+        daily = _json.loads(daily_df.to_json(orient="records"))
+
+        # Ultimas 20 lecturas para contexto inmediato
+        recent_df = con.execute("""
+            SELECT timestamp, glucose_mgdl, trend, delta_mgdl, slope_mgdl_min, range_type
+            FROM readings
+            ORDER BY timestamp DESC
+            LIMIT 20
+        """).fetchdf()
+        recent = _json.loads(recent_df.to_json(orient="records"))
+    finally:
+        con.close()
+
+    glucose_context = {
+        "estadisticas_generales": stats,
+        "resumenes_diarios_recientes": daily,
+        "ultimas_lecturas": recent,
+    }
+
+    try:
+        answer = chat_answer(
+            question=request.question,
+            glucose_context=glucose_context,
+            conversation_history=request.conversation_history,
+        )
+    except Exception as exc:
+        logger.error("Error en chat: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Error del LLM: {exc}")
+
+    return ChatResponse(answer=answer)
 
 
 @router.get("/pdf/{report_date}")

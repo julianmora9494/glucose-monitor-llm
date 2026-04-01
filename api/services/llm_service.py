@@ -87,6 +87,20 @@ def detect_patterns(weekly_data: list[dict[str, Any]]) -> list[str]:
         return []
 
 
+def chat_answer(
+    question: str,
+    glucose_context: dict[str, Any],
+    conversation_history: list[dict[str, str]],
+) -> str:
+    """Responde una pregunta del usuario con contexto clinico + glucemico."""
+    interpreter = get_interpreter()
+    return interpreter.answer_question(
+        question=question,
+        glucose_context=glucose_context,
+        conversation_history=conversation_history,
+    )
+
+
 def get_cached_llm_summary(target_date: date) -> Optional[str]:
     """Lee el llm_summary cacheado de daily_summaries."""
     from api.services.db import get_connection

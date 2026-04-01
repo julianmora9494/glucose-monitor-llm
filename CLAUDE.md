@@ -65,14 +65,13 @@ glucose-monitor-llm/
 │       ├── chart.py           # Generación PNG del perfil glucémico diario
 │       └── llm_service.py     # Singleton GlucoseInterpreter + cache LLM
 ├── dashboard/                 # Streamlit (puerto 8501)
-│   ├── app.py                 # Página principal: gauge + métricas hoy + mini-chart
+│   ├── app.py                 # Inicio + tiempo real: gauge, alertas, auto-refresh 2 min
 │   ├── api_client.py          # Cliente HTTP centralizado para FastAPI
 │   ├── components.py          # Componentes reutilizables: gauge, mini_chart, daily_chart...
 │   └── pages/
-│       ├── 1_tiempo_real.py   # Auto-refresh 2 min + alertas contextuales
-│       ├── 2_analisis_diario.py  # Selector de fecha + chart AGP + tabla de lecturas
-│       ├── 3_tendencias.py    # Barras apiladas TIR/TAR/TBR + CV% + tabla comparativa
-│       └── 4_informe_medico.py   # Informe médico con IA (Azure OpenAI)
+│       ├── 1_analisis_diario.py  # Selector de fecha + chart AGP + tabla de lecturas
+│       ├── 2_tendencias.py    # Barras apiladas TIR/TAR/TBR + CV% + tabla comparativa
+│       └── 3_informe_medico.py   # Informe médico con IA (Azure OpenAI)
 ├── scripts/
 │   └── import_history.py      # Importa ~15 días de logbook LibreLinkUp → DuckDB
 ├── llm/                       # Azure OpenAI
@@ -171,6 +170,7 @@ Usar `WHERE timestamp = (SELECT MAX(timestamp) FROM readings)` en su lugar.
 | `GET /api/reports/llm-status` | Verifica si Azure OpenAI está configurado |
 | `POST /api/reports/generate` | Genera informe médico con IA (período) |
 | `GET /api/reports/daily-interpretation/{date}` | Interpretación diaria con IA (cache) |
+| `POST /api/reports/chat` | Chat interactivo con IA (perfil + historial CGM) |
 
 ---
 

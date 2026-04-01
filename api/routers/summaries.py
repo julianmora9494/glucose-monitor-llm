@@ -176,7 +176,7 @@ def get_available_dates() -> list[str]:
     con = get_connection()
     try:
         rows = con.execute("""
-            SELECT DISTINCT CAST(timestamp AS DATE) as day
+            SELECT DISTINCT CAST(timestamp AT TIME ZONE 'America/Bogota' AS DATE) as day
             FROM readings
             ORDER BY day DESC
             LIMIT 90

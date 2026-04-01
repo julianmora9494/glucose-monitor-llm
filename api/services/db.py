@@ -108,14 +108,16 @@ def insert_reading(
 
 
 def get_readings_by_date(target_date: date) -> pd.DataFrame:
-    """Retorna todas las lecturas de un día como DataFrame."""
+    """Retorna todas las lecturas de un día en hora Colombia (UTC-5)."""
     con = get_connection()
     try:
+        # Convertir a hora local antes de comparar fecha para que lecturas
+        # nocturnas (ej. 10 PM COL = 3 AM UTC+1) queden en el dia correcto
         df = con.execute("""
             SELECT timestamp, glucose_mgdl, trend, delta_mgdl,
                    dt_min, slope_mgdl_min, percent_change, range_type
             FROM readings
-            WHERE CAST(timestamp AS DATE) = ?
+            WHERE CAST(timestamp AT TIME ZONE 'America/Bogota' AS DATE) = ?
             ORDER BY timestamp ASC
         """, [target_date]).df()
         return df
@@ -124,7 +126,7 @@ def get_readings_by_date(target_date: date) -> pd.DataFrame:
 
 
 def get_readings_last_hours(hours: int = 3) -> pd.DataFrame:
-    """Retorna las lecturas de las últimas N horas."""
+    """Retorna las lecturas de las ultimas N horas relativas a la lectura mas reciente."""
     con = get_connection()
     try:
         interval = f"{hours} hours"
@@ -132,7 +134,7 @@ def get_readings_last_hours(hours: int = 3) -> pd.DataFrame:
             SELECT timestamp, glucose_mgdl, trend, delta_mgdl,
                    slope_mgdl_min, range_type
             FROM readings
-            WHERE timestamp >= now() - INTERVAL ?
+            WHERE timestamp >= (SELECT MAX(timestamp) FROM readings) - INTERVAL ?
             ORDER BY timestamp ASC
         """, [interval]).df()
         return df

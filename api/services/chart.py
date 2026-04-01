@@ -46,7 +46,7 @@ def generate_daily_chart(target_date: date, force: bool = False) -> Optional[Pat
     if df.empty or len(df) < 2:
         return None
 
-    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert("America/Bogota")
     df = df.sort_values("timestamp")
 
     metrics = calculate_daily_metrics(df)

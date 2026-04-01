@@ -1,17 +1,18 @@
 """
-Glucose Intelligence Dashboard — página principal.
+Glucose Intelligence Dashboard — pagina principal con tiempo real.
 Ejecutar con: streamlit run dashboard/app.py
 """
 
 import sys
 from pathlib import Path
 
-# Asegurar que la raíz del proyecto esté en sys.path para imports de dashboard.*
+# Asegurar que la raiz del proyecto este en sys.path para imports de dashboard.*
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from datetime import date
 
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 
 import dashboard.api_client as api
 from dashboard.components import (
@@ -29,6 +30,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Auto-refresh cada 2 minutos (igual que POLL_SECONDS del monitor)
+st_autorefresh(interval=120_000, key="realtime_refresh")
+
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.title("🩸 Glucose Intelligence")
@@ -36,8 +40,7 @@ with st.sidebar:
     st.divider()
     st.markdown("""
     **Páginas:**
-    - 🏠 Inicio (esta página)
-    - ⏱ Tiempo Real
+    - 🏠 Inicio + Tiempo Real (esta página)
     - 📊 Análisis Diario
     - 📈 Tendencias
     - 📋 Informe Médico
@@ -59,14 +62,55 @@ if not online:
 st.subheader("Estado actual")
 latest = api.get_latest_reading()
 
-if latest:
-    glucose_gauge(latest)
-else:
-    st.warning("Sin lectura disponible. El monitor puede no estar corriendo.")
+if not latest:
+    st.warning("Sin lecturas disponibles. El monitor puede no estar corriendo.")
+    st.info("Arranca el monitor: `python monitor/monitor_glucose.py`")
+    st.stop()
+
+glucose_gauge(latest)
 
 st.divider()
 
-# ─── Resumen del día de hoy ───────────────────────────────────────────────────
+# ─── Alertas contextuales ────────────────────────────────────────────────────
+alert_level = latest.get("alert_level", "ok")
+glucose = latest.get("glucose_mgdl", 0)
+minutes_ago = latest.get("minutes_ago", 0)
+
+if minutes_ago > 15:
+    st.warning(
+        f"⚠️ La última lectura tiene **{minutes_ago:.0f} minutos** de antigüedad. "
+        "El sensor puede estar desconectado.",
+        icon="📡",
+    )
+elif alert_level == "critical":
+    if glucose < 70:
+        st.error(
+            f"🆘 **HIPOGLUCEMIA** — {glucose:.0f} mg/dL\n\n"
+            "Tomar azúcar de acción rápida (jugo, glucosa, caramelo) de inmediato. "
+            "Medir nuevamente en 15 minutos.",
+        )
+    else:
+        st.error(
+            f"🆘 **HIPERGLUCEMIA SEVERA** — {glucose:.0f} mg/dL\n\n"
+            "Revisar dosis de insulina. Hidratarse bien. Consultar con el médico si persiste.",
+        )
+elif alert_level == "warning":
+    if glucose < 70:
+        st.warning(f"🚨 Glucosa baja: {glucose:.0f} mg/dL — Considera una corrección.")
+    else:
+        st.warning(f"⚠️ Glucosa alta: {glucose:.0f} mg/dL — Revisa si se aplicó la insulina.")
+else:
+    st.success(f"✅ Glucosa en rango: {glucose:.0f} mg/dL")
+
+st.divider()
+
+# ─── Mini-chart ultimas 3 horas ──────────────────────────────────────────────
+st.subheader("Últimas 3 horas")
+recent = api.get_readings_last_hours(3)
+mini_chart(recent, title="")
+
+# ─── Resumen del dia de hoy ──────────────────────────────────────────────────
+st.divider()
 st.subheader(f"Resumen de hoy — {date.today().strftime('%d/%m/%Y')}")
 
 today_summary = api.get_daily_summary(date.today())
@@ -78,14 +122,7 @@ if today_summary and today_summary.get("reading_count", 0) >= 3:
 else:
     st.info("Aún no hay suficientes datos de hoy (mínimo 3 lecturas). Ve a **Análisis Diario** para ver días anteriores.")
 
-st.divider()
-
-# ─── Mini-chart últimas 3 horas ───────────────────────────────────────────────
-st.subheader("Últimas 3 horas")
-recent = api.get_readings_last_hours(3)
-mini_chart(recent, title="")
-
-# ─── Resumen semanal rápido ───────────────────────────────────────────────────
+# ─── Resumen semanal rapido ──────────────────────────────────────────────────
 st.divider()
 st.subheader("Semana en cifras")
 
@@ -106,5 +143,11 @@ if weekly:
 else:
     st.info("Sin datos semanales disponibles.")
 
+# ─── Footer ──────────────────────────────────────────────────────────────────
 st.divider()
-st.caption("💡 Usa el menú lateral para navegar entre páginas.")
+col1, col2 = st.columns(2)
+with col1:
+    st.caption("🔄 Esta página se actualiza automáticamente cada 2 minutos.")
+with col2:
+    if st.button("↺ Actualizar ahora"):
+        st.rerun()

@@ -111,3 +111,24 @@ def get_daily_interpretation(day: date, force: bool = False) -> Optional[dict]:
     """Interpretacion clinica diaria con IA."""
     params = {"force": "true"} if force else None
     return _get(f"/api/reports/daily-interpretation/{day}", params=params)
+
+
+def chat_with_ai(
+    question: str,
+    conversation_history: list[dict[str, str]],
+) -> Optional[dict]:
+    """Envia una pregunta al chat medico con IA."""
+    try:
+        r = requests.post(
+            f"{API_URL}/api/reports/chat",
+            json={
+                "question": question,
+                "conversation_history": conversation_history,
+            },
+            timeout=60,
+        )
+        if r.status_code == 200:
+            return r.json()
+        return None
+    except Exception:
+        return None

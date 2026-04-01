@@ -31,7 +31,7 @@ MODOS DE USO
 import csv
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -91,6 +91,58 @@ def _insert(ts: datetime, glucose: float, trend: Optional[str] = None) -> bool:
     )
 
 
+def _backfill_derived_metrics() -> None:
+    """
+    Calcula delta/slope/dt_min/percent_change para lecturas con estos campos NULL.
+    Replica la logica del monitor: compara cada lectura con la anterior por timestamp.
+    """
+    import duckdb
+    DATABASE_URL = os.getenv("DATABASE_URL", "data/glucose.duckdb")
+    con = duckdb.connect(DATABASE_URL)
+
+    rows = con.execute("""
+        SELECT id, timestamp, glucose_mgdl
+        FROM readings
+        ORDER BY timestamp ASC
+    """).fetchall()
+
+    if len(rows) < 2:
+        print("Menos de 2 lecturas — no se pueden calcular deltas.")
+        con.close()
+        return
+
+    updated = 0
+    for i in range(1, len(rows)):
+        curr_id, curr_ts, curr_g = rows[i]
+        prev_id, prev_ts, prev_g = rows[i - 1]
+
+        # Solo actualizar lecturas con campos derivados NULL
+        existing = con.execute(
+            "SELECT delta_mgdl FROM readings WHERE id = ?", [curr_id]
+        ).fetchone()
+        if existing[0] is not None:
+            continue
+
+        dt_min = (curr_ts - prev_ts).total_seconds() / 60
+        if dt_min <= 0 or dt_min > 15:
+            # Saltos >15 min indican datos no consecutivos
+            continue
+
+        delta = curr_g - prev_g
+        slope = delta / dt_min
+        pct = (delta / prev_g) * 100 if prev_g != 0 else 0.0
+
+        con.execute("""
+            UPDATE readings
+            SET delta_mgdl = ?, dt_min = ?, slope_mgdl_min = ?, percent_change = ?
+            WHERE id = ?
+        """, [delta, dt_min, slope, pct, curr_id])
+        updated += 1
+
+    con.close()
+    print(f"Metricas derivadas calculadas: {updated} lecturas actualizadas")
+
+
 def _recalculate_summaries(dates: set) -> None:
     """Calcula y persiste el resumen AGP para cada fecha del set."""
     if not dates:
@@ -119,11 +171,12 @@ def _recalculate_all_from_db() -> None:
     DATABASE_URL = os.getenv("DATABASE_URL", "data/glucose.duckdb")
     con = duckdb.connect(DATABASE_URL)
     rows = con.execute(
-        "SELECT DISTINCT CAST(timestamp AS DATE) as d FROM readings ORDER BY d"
+        "SELECT DISTINCT CAST(timestamp AT TIME ZONE 'America/Bogota' AS DATE) as d FROM readings ORDER BY d"
     ).fetchall()
     con.close()
     dates = {row[0] for row in rows}
     print(f"Dias con lecturas en DuckDB: {len(dates)}")
+    _backfill_derived_metrics()
     _recalculate_summaries(dates)
 
 
@@ -208,6 +261,7 @@ def _import_from_librelink() -> None:
     print("y los escaneos manuales del sensor (logbook). Para el historial")
     print("completo de 14 dias exportar CSV desde https://www.libreview.com\n")
 
+    _backfill_derived_metrics()
     _recalculate_summaries(dates_seen)
 
 
@@ -216,6 +270,7 @@ def _import_from_librelink() -> None:
 # Posibles nombres de columna en el CSV de LibreView segun idioma/version
 _TS_COLS = [
     "Sello de tiempo del dispositivo",
+    "Marca de hora del dispositivo",
     "Device Timestamp",
     "Gerätezeitstempel",
 ]
@@ -237,10 +292,15 @@ def _find_col(header: list[str], candidates: list[str]) -> Optional[str]:
     return None
 
 def _parse_libre_ts(raw: str) -> Optional[datetime]:
-    """Intenta parsear el timestamp del CSV de LibreView (varios formatos)."""
+    """
+    Parsea el timestamp del CSV de LibreView (varios formatos).
+    LibreView exporta en hora LOCAL del dispositivo (Colombia = UTC-5).
+    """
+    # Colombia no tiene horario de verano → offset fijo -05:00
+    _COL_TZ = timezone(timedelta(hours=-5))
     for fmt in ("%m/%d/%Y %I:%M %p", "%d-%m-%Y %H:%M", "%Y-%m-%d %H:%M", "%d/%m/%Y %H:%M"):
         try:
-            return datetime.strptime(raw.strip(), fmt).replace(tzinfo=timezone.utc)
+            return datetime.strptime(raw.strip(), fmt).replace(tzinfo=_COL_TZ)
         except ValueError:
             continue
     return None
@@ -266,7 +326,7 @@ def _import_from_csv(csv_path: str) -> None:
     # Encontrar la fila real de encabezados (la que tiene columnas de timestamp)
     header_row = 0
     for i, line in enumerate(lines):
-        if any(c in line for c in _TS_COLS + ["Device Timestamp", "Sello"]):
+        if any(c in line for c in _TS_COLS + ["Device Timestamp", "Sello", "Marca de hora"]):
             header_row = i
             break
 
@@ -325,6 +385,7 @@ def _import_from_csv(csv_path: str) -> None:
     print(f"Errores de formato  : {errors}")
     print(f"Dias afectados      : {len(dates_seen)}\n")
 
+    _backfill_derived_metrics()
     _recalculate_summaries(dates_seen)
 
 

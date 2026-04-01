@@ -177,6 +177,46 @@ class GlucoseInterpreter:
         content = response.choices[0].message.content or "{}"
         return json.loads(content)
 
+    def answer_question(
+        self,
+        question: str,
+        glucose_context: dict[str, Any],
+        conversation_history: list[dict[str, str]],
+    ) -> str:
+        """
+        Responde preguntas del usuario sobre la paciente, integrando
+        el perfil clinico completo + historial glucemico del CGM.
+        """
+        context_message = f"""
+DATOS GLUCEMICOS HISTORICOS DEL CGM:
+{json.dumps(glucose_context, ensure_ascii=False, indent=2)}
+
+Usa toda esta informacion junto con el perfil clinico de la paciente
+para responder la pregunta del usuario. Se preciso, empático y clinicamente riguroso.
+Responde en español. Si la pregunta requiere informacion que no tienes, indicalo claramente.
+"""
+
+        messages: list[dict[str, str]] = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": context_message},
+            {"role": "assistant", "content": "Entendido. Tengo acceso al perfil clínico completo y al historial glucémico del CGM. ¿En qué puedo ayudarte?"},
+        ]
+
+        # Agregar historial de conversacion previo
+        for msg in conversation_history:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+
+        # Agregar la pregunta actual
+        messages.append({"role": "user", "content": question})
+
+        response = self.client.chat.completions.create(
+            model=self.deployment,
+            messages=messages,
+            max_completion_tokens=1500,
+        )
+
+        return response.choices[0].message.content or ""
+
     def detect_patterns(self, weekly_data: list[dict[str, Any]]) -> list[str]:
         """
         Analiza una semana de datos para detectar patrones clínicos recurrentes.
