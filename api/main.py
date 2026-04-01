@@ -6,6 +6,7 @@ Ejecutar con:
     uvicorn api.main:app --reload --port 8000
 """
 
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -36,14 +37,18 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Permitir requests desde Streamlit en localhost
+# Origenes permitidos: localhost + Streamlit Cloud + extras via env
+_extra_origins = os.getenv("CORS_ORIGINS", "").split(",")
+_origins = [
+    "http://localhost:8501",
+    "http://127.0.0.1:8501",
+    "http://localhost:3000",
+] + [o.strip() for o in _extra_origins if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8501",
-        "http://127.0.0.1:8501",
-        "http://localhost:3000",
-    ],
+    allow_origins=_origins,
+    allow_origin_regex=r"https://.*\.streamlit\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -15,6 +15,7 @@ pytz
 
 # ─── Dashboard (Streamlit) ───────────────────────────────────────────────────
 streamlit
+streamlit-autorefresh
 plotly
 
 # ─── LLM (Azure OpenAI) ─────────────────────────────────────────────────────
