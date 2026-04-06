@@ -66,6 +66,7 @@ LIBRE_REGION = os.getenv("LIBRE_REGION", "LA").upper()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_CAREGIVER_CHAT_ID = os.getenv("TELEGRAM_CAREGIVER_CHAT_ID")
 
 API_URL = os.getenv("API_URL", "http://localhost:8888")
 POLL_SECONDS = env_int("POLL_SECONDS", 120)
@@ -198,9 +199,16 @@ def notify_telegram(title: str, body: str) -> None:
 
     message = f"{title}\n\n{body}"
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
-    response = http_requests.post(url, json=payload, timeout=15)
-    response.raise_for_status()
+
+    # Enviar a todos los destinatarios configurados (paciente + cuidador)
+    recipients = [TELEGRAM_CHAT_ID]
+    if TELEGRAM_CAREGIVER_CHAT_ID and TELEGRAM_CAREGIVER_CHAT_ID != TELEGRAM_CHAT_ID:
+        recipients.append(TELEGRAM_CAREGIVER_CHAT_ID)
+
+    for chat_id in recipients:
+        payload = {"chat_id": chat_id, "text": message}
+        response = http_requests.post(url, json=payload, timeout=15)
+        response.raise_for_status()
 
 
 def emit_alert(level: str, alert_code: str, title: str, body: str, state: dict) -> None:

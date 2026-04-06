@@ -3,6 +3,7 @@ Glucose Intelligence Dashboard — pagina principal con tiempo real.
 Ejecutar con: streamlit run dashboard/app.py
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -11,8 +12,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from datetime import date
 
+from dotenv import load_dotenv
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
+
+load_dotenv()
+
+# Intervalo de polling — debe coincidir con POLL_SECONDS del monitor
+POLL_SECONDS = int(os.getenv("POLL_SECONDS", "120"))
 
 import dashboard.api_client as api
 from dashboard.components import (
@@ -30,8 +37,8 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Auto-refresh cada 2 minutos (igual que POLL_SECONDS del monitor)
-st_autorefresh(interval=120_000, key="realtime_refresh")
+# Auto-refresh sincronizado con POLL_SECONDS del monitor
+st_autorefresh(interval=POLL_SECONDS * 1000, key="realtime_refresh")
 
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -172,7 +179,15 @@ else:
 st.divider()
 col1, col2 = st.columns(2)
 with col1:
-    st.caption("🔄 Esta página se actualiza automáticamente cada 2 minutos.")
+    poll_min = POLL_SECONDS // 60
+    poll_sec = POLL_SECONDS % 60
+    if poll_min > 0 and poll_sec == 0:
+        refresh_label = f"{poll_min} min"
+    elif poll_min > 0:
+        refresh_label = f"{poll_min} min {poll_sec} seg"
+    else:
+        refresh_label = f"{poll_sec} seg"
+    st.caption(f"🔄 Esta página se actualiza automáticamente cada {refresh_label}.")
 with col2:
     if st.button("↺ Actualizar ahora"):
         st.rerun()
