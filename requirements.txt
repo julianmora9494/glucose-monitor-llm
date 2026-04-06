@@ -84,6 +84,26 @@ urllib3==2.6.3
 wheel==0.46.3
     # via pip-tools
 
+# ─── Telegram Bot (bidireccional) ────────────────────────────────────────────
+apscheduler==3.11.2
+    # via python-telegram-bot
+python-telegram-bot[job-queue]==21.10
+    # via -r requirements.in
+tzlocal==5.3.1
+    # via apscheduler
+
+# ─── Testing ─────────────────────────────────────────────────────────────────
+iniconfig==2.3.0
+    # via pytest
+pluggy==1.6.0
+    # via pytest
+pytest==8.3.4
+    # via -r requirements.in
+pytest-asyncio==0.25.3
+    # via -r requirements.in
+respx==0.22.0
+    # via -r requirements.in
+
 # The following packages are considered to be unsafe in a requirements file:
 # pip
 # setuptools

@@ -132,3 +132,21 @@ def chat_with_ai(
         return None
     except Exception:
         return None
+
+
+# ─── Admin / Importación ─────────────────────────────────────────────────────
+
+def trigger_csv_import() -> Optional[dict]:
+    """Dispara la importación de CSVs desde Examenes_resultados/ via la API."""
+    try:
+        r = requests.post(f"{API_URL}/api/admin/import-csv", timeout=60)
+        if r.status_code == 200:
+            return r.json()
+        return None
+    except Exception:
+        return None
+
+
+def get_db_status() -> Optional[dict]:
+    """Retorna el estado actual de la base de datos (total lecturas, rango de fechas)."""
+    return _get("/api/admin/db-status")

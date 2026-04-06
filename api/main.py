@@ -12,7 +12,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import readings, summaries, reports, predictions
+from api.routers import readings, summaries, reports, predictions, admin
 from api.services.db import initialize_schema
 
 
@@ -53,6 +53,7 @@ app.include_router(readings.router,   prefix="/api/readings",   tags=["Lecturas"
 app.include_router(summaries.router,  prefix="/api/summaries",  tags=["Resúmenes AGP"])
 app.include_router(reports.router,    prefix="/api/reports",    tags=["Informes médicos"])
 app.include_router(predictions.router,prefix="/api/predictions",tags=["Predicciones"])
+app.include_router(admin.router,      prefix="/api/admin",      tags=["Admin"])
 
 
 @app.get("/health", tags=["Sistema"])

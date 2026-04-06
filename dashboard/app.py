@@ -49,6 +49,31 @@ with st.sidebar:
     online = api.is_api_online()
     api_status_banner(online)
 
+    # ─── Importar datos ────────────────────────────────────────────────────
+    st.divider()
+    st.markdown("**Datos**")
+
+    # Estado actual de la DB
+    db_status = api.get_db_status() if online else None
+    if db_status:
+        st.caption(
+            f"Última lectura: "
+            f"{str(db_status.get('ultima_lectura', '—'))[:16].replace('T', ' ')}"
+        )
+
+    # Botón para importar CSVs de Examenes_resultados/ sin reiniciar
+    if online and st.button("Importar CSVs", help="Reimporta todos los archivos de Examenes_resultados/", use_container_width=True):
+        with st.spinner("Importando datos..."):
+            result = api.trigger_csv_import()
+        if result:
+            n = result.get("total_inserted", 0)
+            files = result.get("files_processed", 0)
+            if n > 0:
+                st.success(f"{n} lecturas nuevas importadas ({files} archivos)")
+                st.rerun()
+            else:
+                st.info(f"Sin datos nuevos en {files} archivo(s) — todo ya estaba importado")
+
 # ─── Encabezado ───────────────────────────────────────────────────────────────
 st.title("🩸 Panel de Control Glucémico")
 st.caption(f"Actualizado: {date.today().strftime('%d de %B de %Y')}")
