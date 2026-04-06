@@ -17,6 +17,7 @@ from api.services.llm_service import (
     interpret_daily,
     detect_patterns,
     chat_answer,
+    process_conversation_batch,
     get_cached_llm_summary,
     cache_llm_summary,
 )
@@ -51,6 +52,7 @@ class DailyInterpretation(BaseModel):
 class ChatRequest(BaseModel):
     question: str
     conversation_history: list[dict[str, str]] = []
+    channel: str = "dashboard"  # 'telegram' ajusta el estilo del LLM para chat directo
 
 
 class ChatResponse(BaseModel):
@@ -256,12 +258,57 @@ def chat_with_ai(request: ChatRequest) -> ChatResponse:
             question=request.question,
             glucose_context=glucose_context,
             conversation_history=request.conversation_history,
+            channel=request.channel,
         )
     except Exception as exc:
         logger.error("Error en chat: %s", exc)
         raise HTTPException(status_code=500, detail=f"Error del LLM: {exc}")
 
     return ChatResponse(answer=answer)
+
+
+class ConversationMessage(BaseModel):
+    role: str
+    content: str
+    timestamp: Optional[str] = None
+
+
+class ConversationBatchRequest(BaseModel):
+    messages: list[ConversationMessage]
+
+
+class ConversationBatchResponse(BaseModel):
+    summary: str
+    notes: list[dict]
+
+
+@router.post("/process-conversation-batch", response_model=ConversationBatchResponse)
+def process_bot_conversation_batch(request: ConversationBatchRequest) -> ConversationBatchResponse:
+    """
+    Procesa un batch de mensajes del bot de Telegram.
+    Genera un resumen clínico + extrae notas de la paciente.
+
+    Llamado por el bot cuando una sesión expira (cada 10 min).
+    El resumen y las notas se almacenan en conversations.duckdb (bot-side).
+    """
+    if not is_llm_configured():
+        raise HTTPException(status_code=503, detail="Azure OpenAI no configurado")
+
+    if len(request.messages) < 2:
+        raise HTTPException(status_code=400, detail="Se requieren al menos 2 mensajes para resumir")
+
+    messages_dicts = [{"role": m.role, "content": m.content} for m in request.messages]
+
+    try:
+        result = process_conversation_batch(messages_dicts)
+    except Exception as exc:
+        logger.error("Error procesando batch de conversación: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Error del LLM: {exc}")
+
+    return ConversationBatchResponse(
+        summary=result.get("summary", ""),
+        notes=result.get("notes", []),
+    )
 
 
 @router.get("/pdf/{report_date}")

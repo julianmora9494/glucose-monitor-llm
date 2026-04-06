@@ -5,10 +5,13 @@ y el historial clínico de la paciente.
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from openai import AzureOpenAI
+
+logger = logging.getLogger(__name__)
 
 
 PATIENT_PROFILE_PATH = Path("Examenes_resultados/patient_profile.json")
@@ -182,10 +185,16 @@ class GlucoseInterpreter:
         question: str,
         glucose_context: dict[str, Any],
         conversation_history: list[dict[str, str]],
+        channel: str = "dashboard",
     ) -> str:
         """
         Responde preguntas del usuario sobre la paciente, integrando
         el perfil clinico completo + historial glucemico del CGM.
+
+        Args:
+            channel: 'telegram' ajusta el estilo para chat directo con la paciente
+                     (más conciso, preguntas proactivas sobre comida/insulina).
+                     'dashboard' usa el estilo completo por defecto.
         """
         context_message = f"""
 DATOS GLUCEMICOS HISTORICOS DEL CGM:
@@ -194,6 +203,21 @@ DATOS GLUCEMICOS HISTORICOS DEL CGM:
 Usa toda esta informacion junto con el perfil clinico de la paciente
 para responder la pregunta del usuario. Se preciso, empático y clinicamente riguroso.
 Responde en español. Si la pregunta requiere informacion que no tienes, indicalo claramente.
+"""
+
+        # Instrucciones adicionales para el canal de Telegram
+        if channel == "telegram":
+            context_message += """
+CANAL: Telegram (chat directo con la paciente o su cuidador)
+INSTRUCCIONES PARA ESTE CANAL:
+- Sé conciso: máximo 300 palabras por respuesta
+- Haz preguntas proactivas y relevantes al final de tu respuesta según el contexto clínico:
+  * Si la glucosa está alta (>180): pregunta qué comió 2-3 horas antes y si se aplicó glulisina
+  * Si hay hipoglucemia (<70): pregunta si ya comió algo y cuándo fue la última dosis de insulina
+  * Si hay alta variabilidad (CV>36%): pregunta sobre estrés, actividad física o cambios de rutina
+  * Si pregunta sobre dosis: responde basándote en su esquema actual (degludec 40 UI basal + glulisina 20/20/18 UI + metformina 850 mg) pero SIEMPRE recuerda confirmar con su médico tratante
+- Usa emojis con moderación para hacer el mensaje amigable (1-2 por respuesta)
+- Si detectas una situación potencialmente peligrosa (hipo severa, hiper sostenida), indícalo con urgencia clara
 """
 
         messages: list[dict[str, str]] = [
@@ -216,6 +240,97 @@ Responde en español. Si la pregunta requiere informacion que no tienes, indical
         )
 
         return response.choices[0].message.content or ""
+
+    def summarize_conversation(self, messages: list[dict]) -> str:
+        """
+        Resume un batch de mensajes preservando todos los hechos clínicos relevantes.
+        Diseñado para no perder información sobre cambios que la paciente reportó
+        (ej. "no compré la metformina", "cambié la dosis").
+        """
+        formatted = "\n".join(
+            f"[{m['role'].upper()}]: {m['content']}" for m in messages
+        )
+
+        user_message = f"""
+Resume la siguiente conversación entre la paciente/cuidador y el asistente médico.
+
+CONVERSACIÓN:
+{formatted}
+
+INSTRUCCIONES CRÍTICAS PARA EL RESUMEN:
+- Preserva TODOS los hechos que la paciente mencionó sobre su tratamiento actual
+- Anota EXPLÍCITAMENTE si la paciente dijo que NO está tomando algún medicamento
+- Incluye cualquier cambio de dosis reportado por la paciente (aunque sea por cuenta propia)
+- Registra síntomas nuevos, episodios hipoglucémicos o hiperglucémicos relevantes discutidos
+- Menciona las recomendaciones dadas por el asistente y si la paciente las aceptó
+- Incluye patrones glucémicos discutidos y sus posibles causas identificadas
+- Máximo 300 palabras. Formato narrativo claro.
+"""
+
+        response = self.client.chat.completions.create(
+            model=self.deployment,
+            messages=[
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            max_completion_tokens=600,
+        )
+
+        return response.choices[0].message.content or ""
+
+    def extract_patient_notes(self, messages: list[dict]) -> list[dict]:
+        """
+        Extrae hechos clínicos que la paciente mencionó explícitamente y que
+        pueden diferir del perfil clínico base (patient_profile.json).
+
+        Retorna lista de {"content": "...", "type": "medication|correction|symptom|behavior"}.
+        Solo incluye hechos mencionados explícitamente por la paciente — no inferencias.
+        """
+        formatted = "\n".join(
+            f"[{m['role'].upper()}]: {m['content']}" for m in messages
+        )
+
+        user_message = f"""
+Analiza esta conversación y extrae SOLO los hechos que la PACIENTE reportó
+explícitamente y que podrían diferir del perfil clínico base.
+
+CONVERSACIÓN:
+{formatted}
+
+Busca específicamente:
+- Medicamentos que NO está tomando o que dejó de tomar (ej: "no compré la metformina")
+- Cambios en dosis que ella hizo por cuenta propia (ej: "me puse 18 en vez de 20")
+- Síntomas nuevos o persistentes que reportó
+- Cambios en rutina, alimentación o actividad física clínicamente relevantes
+- Cualquier corrección a información del perfil clínico
+
+Retorna JSON:
+{{"notes": [
+    {{"content": "descripción clara y fechada del hecho", "type": "medication|correction|symptom|behavior"}},
+    ...
+]}}
+
+Si no hay hechos relevantes, retorna {{"notes": []}}.
+IMPORTANTE: solo incluye hechos mencionados EXPLÍCITAMENTE por la paciente, no inferencias del asistente.
+"""
+
+        response = self.client.chat.completions.create(
+            model=self.deployment,
+            messages=[
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            max_completion_tokens=500,
+            response_format={"type": "json_object"},
+        )
+
+        content = response.choices[0].message.content or '{"notes": []}'
+        try:
+            result = json.loads(content)
+            return result.get("notes", [])
+        except json.JSONDecodeError:
+            logger.warning("extract_patient_notes: respuesta JSON inválida")
+            return []
 
     def detect_patterns(self, weekly_data: list[dict[str, Any]]) -> list[str]:
         """

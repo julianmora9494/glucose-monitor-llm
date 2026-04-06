@@ -91,14 +91,36 @@ def chat_answer(
     question: str,
     glucose_context: dict[str, Any],
     conversation_history: list[dict[str, str]],
+    channel: str = "dashboard",
 ) -> str:
-    """Responde una pregunta del usuario con contexto clinico + glucemico."""
+    """
+    Responde una pregunta del usuario con contexto clinico + glucemico.
+
+    Args:
+        channel: 'telegram' para chat directo con la paciente (más conciso,
+                 preguntas proactivas). 'dashboard' para el modo completo.
+    """
     interpreter = get_interpreter()
     return interpreter.answer_question(
         question=question,
         glucose_context=glucose_context,
         conversation_history=conversation_history,
+        channel=channel,
     )
+
+
+def process_conversation_batch(messages: list[dict]) -> dict:
+    """
+    Procesa un batch de mensajes del bot de Telegram:
+    genera resumen + extrae notas clínicas de la paciente.
+
+    Llamado por el bot cuando una sesión expira (cleanup_job cada 10 min).
+    Retorna {"summary": "...", "notes": [{"content": "...", "type": "..."}]}.
+    """
+    interpreter = get_interpreter()
+    summary = interpreter.summarize_conversation(messages)
+    notes = interpreter.extract_patient_notes(messages)
+    return {"summary": summary, "notes": notes}
 
 
 def get_cached_llm_summary(target_date: date) -> Optional[str]:
